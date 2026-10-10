@@ -1,0 +1,39 @@
+[package]
+name = "tchviewer"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Twitch + 5ch + したらば + JPNKN コメントビューア（OBSブラウザソース用）"
+
+[[bin]]
+name = "TchViewer"
+path = "src/main.rs"
+
+# GPL系は使わない。できるだけ MIT（または MIT を選べる二重ライセンス）の部品を使う
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query", "ws"] }
+reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+encoding_rs = "0.8"
+fancy-regex = "0.14"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Media_Speech", "Win32_Media_Audio", "Win32_System_Com", "Win32_Foundation", "Win32_Graphics_DirectWrite"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

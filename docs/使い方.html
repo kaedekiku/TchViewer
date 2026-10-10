@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TchViewer 使い方</title>
+<style>
+  :root { --bg: #f7f7fa; --panel: #fff; --fg: #1d1d22; --muted: #62626d; --line: #dcdce3; --accent: #5b4bdb; --note: #fff7e0; --note-line: #e8c55a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16161a; --panel: #222228; --fg: #ececf1; --muted: #a0a0ab; --line: #34343c; --accent: #9d91ff; --note: #2e2a1c; --note-line: #8a7426; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", sans-serif; line-height: 1.8; font-size: 16px; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 26px; margin: 8px 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 20px; }
+  nav.toc { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 18px; margin-bottom: 24px; }
+  nav.toc ol { margin: 0; padding-left: 1.4em; columns: 2; column-gap: 32px; }
+  @media (max-width: 640px) { nav.toc ol { columns: 1; } }
+  a { color: var(--accent); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 22px 16px; margin: 0 0 18px; }
+  h2 { font-size: 20px; border-bottom: 2px solid var(--accent); padding-bottom: 4px; margin: 14px 0 10px; }
+  h3 { font-size: 16px; margin: 16px 0 4px; }
+  ol.steps > li { margin: 6px 0; }
+  .btn { display: inline-block; border: 1px solid var(--accent); color: var(--accent); border-radius: 5px; padding: 0 7px; font-size: .9em; line-height: 1.6; white-space: nowrap; }
+  .menu { display: inline-block; background: var(--accent); color: #fff; border-radius: 5px; padding: 0 7px; font-size: .9em; line-height: 1.6; white-space: nowrap; }
+  code, kbd { font-family: Consolas, "BIZ UDGothic", monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: .9em; word-break: break-all; }
+  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-size: 14px; line-height: 1.6; }
+  pre code { border: 0; padding: 0; background: none; }
+  .note { background: var(--note); border-left: 4px solid var(--note-line); border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 15px; }
+  th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--bg); white-space: nowrap; }
+  dl.faq dt { font-weight: 700; margin-top: 12px; }
+  dl.faq dd { margin: 2px 0 0 1em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>TchViewer 使い方</h1>
+<p class="lead">Twitch のチャットと、5ch・したらば・JPNKN のレスをまとめて OBS に表示し、読み上げるソフトです。<br>
+掲示板のレスは、LiveFake で「配信ホワイトリスト」に入れた人（自分宛て）のものだけを表示します。</p>
+
+<nav class="toc">
+<ol>
+  <li><a href="#need">必要なもの</a></li>
+  <li><a href="#start">はじめかた</a></li>
+  <li><a href="#connect">Twitch とスレッドをつなぐ</a></li>
+  <li><a href="#livefake">LiveFake と連携する</a></li>
+  <li><a href="#obs">OBS に表示する</a></li>
+  <li><a href="#layout">見た目を変える・シーンごとに使い分ける</a></li>
+  <li><a href="#speech">読み上げ</a></li>
+  <li><a href="#ng">NGワード</a></li>
+  <li><a href="#viewer">ビュワーと状態の確認</a></li>
+  <li><a href="#trouble">困ったとき</a></li>
+  <li><a href="#data">データの場所と削除</a></li>
+  <li><a href="#license">ライセンス</a></li>
+</ol>
+</nav>
+
+<section id="need">
+<h2>1. 必要なもの</h2>
+<ul>
+  <li>Windows 10 / 11（64bit）</li>
+  <li>Microsoft Edge WebView2 ランタイム（Windows 11 には最初から入っています。Windows 10 でも多くの場合入っています）</li>
+  <li>OBS Studio（表示する場合）</li>
+  <li>LiveFake（掲示板のレスを表示する場合）… <a href="https://github.com/kaedekiku/LiveFakeTauri2">https://github.com/kaedekiku/LiveFakeTauri2</a></li>
+  <li>読み上げを使う場合は、棒読みちゃん・VOICEVOX のどちらか（Windows 標準の音声だけで使う場合は不要）</li>
+</ul>
+</section>
+
+<section id="start">
+<h2>2. はじめかた</h2>
+<ol class="steps">
+  <li>ダウンロードした zip ファイルを、好きな場所に展開します（例: <code>D:\Tools\TchViewer</code>）。<br>インストールは不要です。</li>
+  <li>展開したフォルダの中の <code>TchViewer.exe</code> をダブルクリックします。</li>
+  <li>TchViewer の画面が開いたら準備完了です。画面の左にメニューが並んでいます。</li>
+</ol>
+<div class="note">
+  <b>「Windows によって PC が保護されました」と表示されたとき</b><br>
+  <span class="btn">詳細情報</span> を押してから <span class="btn">実行</span> を押すと起動できます（電子署名の無いソフトに表示される確認です）。
+</div>
+<p>TchViewer を終了するときは、ウィンドウの右上の × を押します。設定は自動で保存され、次に起動したときも同じ設定・同じウィンドウの位置で開きます。</p>
+</section>
+
+<section id="connect">
+<h2>3. Twitch とスレッドをつなぐ</h2>
+<ol class="steps">
+  <li>左のメニューの <span class="menu">接続</span> を押します。</li>
+  <li><b>Twitchチャンネル</b> に、表示したいチャンネルの ID か URL を入れます（例: <code>https://www.twitch.tv/example</code>）。ログインは不要です。</li>
+  <li><b>スレッドURL</b> に、5ch・したらば・JPNKN のスレッドの URL を入れます。複数ある場合は1行に1つずつ入れます。</li>
+  <li><span class="btn">保存して接続</span> を押します。</li>
+</ol>
+<p>画面の上に、接続先ごとのランプが表示されます。<b>緑</b>=正常、<b>黄</b>=接続中、<b>赤</b>=エラーです。</p>
+<ul>
+  <li><b>掲示板の巡回間隔</b>: 掲示板を見に行く間隔です（10〜300秒、普段は 15 秒のままで大丈夫です）。</li>
+  <li><b>Twitch のバッジ画像を取得する</b>: サブスクなどのバッジを表示します。Twitch の公式ではない方法で取得しているため、表示がおかしいときはオフにしてください。</li>
+  <li>スレッドが 1000 まで埋まったら、次スレの URL に差し替えて <span class="btn">保存して接続</span> を押してください。</li>
+</ul>
+</section>
+
+<section id="livefake">
+<h2>4. LiveFake と連携する（掲示板のレスを表示する）</h2>
+<p>TchViewer は、掲示板のレスのうち <b>LiveFake の「配信ホワイトリスト」に入っている ID のレスだけ</b> を表示・読み上げします。ホワイトリストが空のときや、連携していないときは、掲示板のレスは1件も表示されません。</p>
+<ol class="steps">
+  <li>LiveFake で、<b>設定 &gt; TchViewer連携</b> の「TCVホワイトリスト」をオンにします。</li>
+  <li>TchViewer の左のメニューの <span class="menu">LiveFake連携</span> を押します。</li>
+  <li><span class="btn">フォルダを選ぶ</span> を押し、LiveFake の <code>data</code> フォルダを選びます（LiveFake の 設定 &gt; TchViewer連携 に場所が表示されています）。</li>
+  <li>LiveFake でレスの ID をホワイトリストに追加すると、1〜2秒で TchViewer の「有効なID」に表示されます。</li>
+</ol>
+<div class="note">ホワイトリストは<b>その日だけ有効</b>です（5ch の ID は日付が変わると変わるため）。日本時間の 0 時を過ぎると、前の日の一覧は自動で使われなくなります。</div>
+</section>
+
+<section id="obs">
+<h2>5. OBS に表示する</h2>
+<ol class="steps">
+  <li>TchViewer の左のメニューの <span class="menu">表示（OBS）</span> を押し、<b>OBS に追加するURL</b> の <span class="btn">コピー</span> を押します。<br>（通常は <code>http://localhost:11280/overlay.html</code> です）</li>
+  <li>OBS の「ソース」の <kbd>＋</kbd> を押し、<b>ブラウザ</b> を選びます。</li>
+  <li>名前を付けて OK を押し、<b>URL</b> にコピーした URL を貼り付けます。</li>
+  <li>幅と高さを設定します（例: 幅 600 / 高さ 800）。OK を押すと表示されます。</li>
+</ol>
+<div class="note">OBS に表示するには、TchViewer を起動しておく必要があります。OBS を先に起動していた場合は、TchViewer を起動すると自動でつながります。</div>
+</section>
+
+<section id="layout">
+<h2>6. 見た目を変える・シーンごとに使い分ける</h2>
+<h3>見た目を変える</h3>
+<p><span class="menu">表示（OBS）</span> で、文字の大きさ・フォント・色・背景・表示する項目などを変えられます。変えるとすぐに OBS とプレビューに反映されます。</p>
+<ul>
+  <li>フォントは、パソコンに入っているフォントから選べます（入力すると候補が出ます）。</li>
+  <li><b>読みにくい名前の色を自動で調整する</b> をオンにすると、背景に対して見えにくい Twitch の名前の色だけを、自動で明るく（または暗く）します。</li>
+</ul>
+<h3>シーンごとに別の見た目を使う（レイアウト）</h3>
+<ol class="steps">
+  <li><span class="menu">表示（OBS）</span> の <b>レイアウト</b> 欄に新しい名前（例: <code>ゲーム画面用</code>）を入れ、<span class="btn">新規作成</span> か <span class="btn">複製して作成</span> を押します。</li>
+  <li>レイアウトを選んだ状態で見た目を変えると、そのレイアウトにだけ保存されます。</li>
+  <li><b>OBS に追加するURL</b> は、選んでいるレイアウト用の URL に変わります（例: <code>…/overlay.html?layout=ゲーム画面用</code>）。OBS のシーンごとに、使いたいレイアウトの URL をブラウザソースに設定してください。</li>
+</ol>
+<h3>追加CSS（さらに細かく変えたい人向け）</h3>
+<p>レイアウトごとに CSS を追加できます。<span class="menu">表示（OBS）</span> の下にある <b>追加CSS</b> 欄に貼り付けて <span class="btn">CSSを保存して反映</span> を押します。</p>
+<p>例1: 名前の右に本文を続ける（チャット欄と同じ並び）</p>
+<pre><code>.msg .meta { display: inline; margin-right: .6em; }
+.msg .text { display: inline; }</code></pre>
+<p>例2: 名前の列と本文の列を分ける（本文は本文の列の中で折り返す）</p>
+<pre><code>.msg .body { display: flex; align-items: baseline; gap: .6em; flex: 1; }
+.msg .meta { flex: none; white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+.msg .text { flex: 1; min-width: 0; }</code></pre>
+<p>例3: Twitch のチャットを表示しない</p>
+<pre><code>.msg.twitch { display: none; }</code></pre>
+<h3>OBS のソースごとに一部だけ変える</h3>
+<p>URL の後ろに付けると、そのソースだけ設定を上書きできます。</p>
+<table>
+  <tr><th>付けるもの</th><th>意味</th></tr>
+  <tr><td><code>max=10</code></td><td>表示する件数</td></tr>
+  <tr><td><code>fade=30</code></td><td>30秒で消す</td></tr>
+  <tr><td><code>size=28</code></td><td>文字の大きさ</td></tr>
+  <tr><td><code>top=1</code></td><td>新しいものを上に並べる</td></tr>
+  <tr><td><code>hide=twitch</code></td><td>Twitch を表示しない（<code>5ch</code> / <code>shitaraba</code> / <code>jpnkn</code> も指定可。複数はカンマ区切り）</td></tr>
+</table>
+<p>例: <code>http://localhost:11280/overlay.html?max=10&amp;hide=twitch</code>（URL に <code>?</code> が既にあるときは <code>&amp;</code> でつなぎます）</p>
+</section>
+
+<section id="speech">
+<h2>7. 読み上げ</h2>
+<ol class="steps">
+  <li><span class="menu">読み上げ</span> を押し、<b>新着コメントを読み上げる</b> をオンにします。</li>
+  <li><b>読み上げエンジン</b> を選びます。</li>
+  <li><span class="btn">テスト読み上げ</span> で確認できます。止めたいときは <span class="btn">読み上げを止める</span> を押します。</li>
+</ol>
+<table>
+  <tr><th>エンジン</th><th>準備</th></tr>
+  <tr><td>棒読みちゃん</td><td>棒読みちゃんを起動し、「その他」→「アプリケーション連携」で TCP サーバー（ポート 50001）を有効にします。声や速さは棒読みちゃん側の設定で読みます。</td></tr>
+  <tr><td>SAPI</td><td>Windows に入っている音声で読みます。<span class="btn">一覧を読み込む</span> で声を選べます。準備は不要です。</td></tr>
+  <tr><td>VOICEVOX</td><td>VOICEVOX を起動しておきます。<span class="btn">一覧を読み込む</span> で話者を選べます。</td></tr>
+</table>
+<ul>
+  <li>掲示板のレスは「レス123番さん」「したらば123番さん」「ジャパンくん123番さん」のように番号を付けて読みます。</li>
+  <li>URL は読みません（YouTube の URL だけ「ユーチューブ」と読みます）。</li>
+  <li><b>読み上げるソース</b> で、Twitch・5ch・したらば・JPNKN ごとに読む／読まないを選べます。</li>
+  <li>LiveFake でも読み上げている場合は、同じレスを2回読むことになるので、どちらか一方だけで読む設定にしてください。</li>
+</ul>
+</section>
+
+<section id="ng">
+<h2>8. NGワード</h2>
+<p><span class="menu">NGワード</span> に、表示・読み上げしたくない言葉を1行に1つずつ入れます（5ch・したらば・JPNKN のレスが対象です）。入力するとすぐに保存され、次に届いたレスから効きます。</p>
+<ul>
+  <li>大文字・小文字は区別しません。</li>
+  <li><code>/</code> で囲むと正規表現として使えます（例: <code>/^w+$/</code> … 「w」だけのレス）。</li>
+  <li>ホワイトリストに入っている人のレスでも、NGワードに当たれば表示しません。</li>
+</ul>
+</section>
+
+<section id="viewer">
+<h2>9. ビュワーと状態の確認</h2>
+<ul>
+  <li><span class="menu">ビュワー</span> には、OBS に表示されるのと同じコメントが流れます。上のボタンで Twitch・5ch などを絞り込んだり、言葉で検索したりできます。各コメントの <span class="btn">読む</span> でもう一度読み上げ、<span class="btn">コピー</span> で本文をコピーできます。</li>
+  <li><span class="menu">状態</span> では、接続先ごとに「届いた件数」「表示した件数」「ホワイトリスト外で表示しなかった件数」「NGワードで表示しなかった件数」が分かります。掲示板のレスが表示されないときは、まずここを確認してください。</li>
+  <li><span class="menu">情報</span> では、画面のテーマ（Windows に合わせる／ライト／ダーク）を切り替えられます。</li>
+</ul>
+</section>
+
+<section id="trouble">
+<h2>10. 困ったとき</h2>
+<dl class="faq">
+  <dt>掲示板のレスが OBS に表示されない</dt>
+  <dd><span class="menu">状態</span> を開いて確認してください。
+    <ul>
+      <li>「受信」が増えていない → スレッドの URL が正しいか、スレが埋まっていないかを確認します。</li>
+      <li>「ホワイトリスト外」が増えている → その人の ID が LiveFake のホワイトリストに入っていません。<span class="menu">LiveFake連携</span> の「有効なID」も確認してください。</li>
+      <li>「NG」が増えている → NGワードに当たっています。</li>
+    </ul>
+    なお、表示されるのは TchViewer を起動した後に届いたレスです。それより前のレスはさかのぼって表示しません。</dd>
+  <dt>「ポート 11280 を開けません」と表示されて起動しない</dt>
+  <dd>TchViewer がすでに起動しています。タスクバーを確認してください。</dd>
+  <dt>OBS に何も表示されない</dt>
+  <dd>TchViewer が起動しているか、ブラウザソースの URL が正しいかを確認してください。<span class="menu">表示（OBS）</span> の <span class="btn">テストコメント</span> を押すと、表示を確かめられます。</dd>
+  <dt>Twitch のバッジが表示されない・おかしい</dt>
+  <dd>Twitch 側の変更で取得できなくなっている可能性があります。<span class="menu">接続</span> の「Twitch のバッジ画像を取得する」をオフにしてください。</dd>
+  <dt>読み上げされない</dt>
+  <dd><span class="btn">テスト読み上げ</span> で確認してください。棒読みちゃん・VOICEVOX は起動している必要があります。エラーは <span class="menu">状態</span> のログに表示されます。</dd>
+  <dt>不具合を報告したい</dt>
+  <dd><code>data</code> フォルダの <code>tchviewer.log</code>（今回の起動分）と <code>tchviewer.prev.log</code>（前回の起動分）を添えてください。</dd>
+</dl>
+</section>
+
+<section id="data">
+<h2>11. データの場所と削除</h2>
+<p>設定などのデータは、すべて <code>TchViewer.exe</code> と同じフォルダの <code>data</code> フォルダに保存されます。Windows の AppData やレジストリには保存しません。</p>
+<table>
+  <tr><th>ファイル・フォルダ</th><th>内容</th></tr>
+  <tr><td><code>config.json</code></td><td>設定</td></tr>
+  <tr><td><code>layouts\</code></td><td>レイアウト（見た目の設定と追加CSS。メモ帳で編集することもできます）</td></tr>
+  <tr><td><code>window.json</code></td><td>ウィンドウの位置と大きさ</td></tr>
+  <tr><td><code>badges-cache.json</code></td><td>Twitch バッジの一覧（取得できなかったときの予備）</td></tr>
+  <tr><td><code>tchviewer.log</code> / <code>tchviewer.prev.log</code></td><td>動作の記録（今回の起動分 / 前回の起動分）</td></tr>
+  <tr><td><code>webview\</code></td><td>画面表示の作業データ</td></tr>
+</table>
+<p><b>別のパソコンへ移す</b>ときは、フォルダごとコピーしてください。<br>
+<b>削除する</b>ときは、TchViewer を終了してからフォルダごと削除してください。ほかの場所には何も残りません。</p>
+</section>
+
+<section id="license">
+<h2>12. ライセンス</h2>
+<p>TchViewer は MIT License で公開しています（同梱の <code>LICENSE</code>）。使用しているライブラリのライセンスは、同梱の <code>THIRD_PARTY_LICENSES.txt</code> にまとめています。</p>
+<p>関連: LiveFake … <a href="https://github.com/kaedekiku/LiveFakeTauri2">https://github.com/kaedekiku/LiveFakeTauri2</a></p>
+</section>
+</div>
+</body>
+</html>

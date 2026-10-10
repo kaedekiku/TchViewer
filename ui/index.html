@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TchViewer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">T</span> TchViewer <span id="ver" class="ver"></span></div>
+  <div id="lamps" class="lamps" aria-label="接続状態"></div>
+</header>
+
+<div class="shell">
+  <nav class="side" aria-label="メニュー">
+    <button data-page="viewer" class="active">ビュワー</button>
+    <button data-page="connect">接続</button>
+    <button data-page="livefake">LiveFake連携</button>
+    <button data-page="ng">NGワード</button>
+    <button data-page="speech">読み上げ</button>
+    <button data-page="look">表示（OBS）</button>
+    <button data-page="status">状態</button>
+    <button data-page="info">情報</button>
+  </nav>
+
+  <main>
+    <!-- ================================================= ビュワー -->
+    <section class="page active" id="page-viewer">
+      <div class="toolbar">
+        <div class="chips" id="vFilter">
+          <label class="chip twitch"><input type="checkbox" value="twitch" checked> Twitch</label>
+          <label class="chip s-5ch"><input type="checkbox" value="5ch" checked> 5ch</label>
+          <label class="chip shitaraba"><input type="checkbox" value="shitaraba" checked> したらば</label>
+          <label class="chip jpnkn"><input type="checkbox" value="jpnkn" checked> JPNKN</label>
+        </div>
+        <input id="vSearch" type="search" placeholder="絞り込み（名前・ID・本文）">
+        <label class="inline"><input id="vAuto" type="checkbox" checked> 自動スクロール</label>
+        <button id="vClear" class="sub">表示をクリア</button>
+        <button id="vTest" class="sub">テストコメント</button>
+      </div>
+      <p class="hint">OBSに表示されるものと同じ内容です（掲示板はホワイトリストとNGワードを通過したレスだけ）。</p>
+      <div id="vList" class="vlist" aria-live="polite"></div>
+      <div id="vEmpty" class="empty">まだコメントはありません。「接続」でTwitchチャンネルやスレッドを設定してください。</div>
+    </section>
+
+    <!-- ================================================= 接続 -->
+    <section class="page" id="page-connect">
+      <h1>接続</h1>
+      <p class="hint">入力したら「保存して接続」を押してください。押すと接続し直します。</p>
+      <div class="card">
+        <label for="cTwitch">Twitchチャンネル（1行に1つ。チャンネルID または URL）</label>
+        <textarea id="cTwitch" rows="3" placeholder="example_channel"></textarea>
+        <label class="inline"><input id="cBadges" type="checkbox"> Twitch のバッジ画像を取得する（非公式の方法。表示がおかしいときはオフにしてください）</label>
+        <label for="cThreads">スレッドURL（1行に1つ。5ch / したらば / JPNKN）</label>
+        <textarea id="cThreads" rows="4" placeholder="https://mi.5ch.io/test/read.cgi/news4vip/1234567890/&#10;https://jbbs.shitaraba.net/bbs/read.cgi/internet/20196/1780204030/&#10;https://bbs.jpnkn.com/test/read.cgi/board/1234567890/"></textarea>
+        <div class="row">
+          <div><label for="cPoll">掲示板の巡回間隔（秒・10〜300）</label><input id="cPoll" type="number" min="10" max="300"></div>
+          <div><label for="cInitial">接続時に表示する既存レス数</label><input id="cInitial" type="number" min="0" max="1000"></div>
+        </div>
+        <div class="actions"><button id="cSave">保存して接続</button></div>
+        <p class="hint">スレが1000に達したら、次スレのURLに差し替えて保存してください。</p>
+      </div>
+    </section>
+
+    <!-- ================================================= LiveFake連携 -->
+    <section class="page" id="page-livefake">
+      <h1>LiveFake連携（TCVホワイトリスト）</h1>
+      <p class="hint">5ch / したらば / JPNKN は、LiveFake の配信ホワイトリストに入っているID（日本時間の今日の分）のレスだけを表示・読み上げます。一覧が空のときは1件も表示しません。</p>
+      <div class="card">
+        <label>LiveFake の data フォルダ（またはファイル）</label>
+        <div class="pathrow"><input id="wlPath" readonly placeholder="未設定"><button id="wlPickFolder">フォルダを選ぶ</button><button id="wlPickFile" class="sub">ファイルを選ぶ</button><button id="wlClear" class="sub">解除</button></div>
+        <p class="hint">LiveFake の 設定 &gt; TchViewer連携 に表示される data フォルダを選んでください。</p>
+      </div>
+      <div class="card">
+        <dl class="kv">
+          <dt>状態</dt><dd id="wlState">-</dd>
+          <dt>ファイルの日付</dt><dd><span id="wlDate">-</span>（今日: <span id="wlToday">-</span>）</dd>
+          <dt>有効なID</dt><dd><span id="wlCount">0</span>件</dd>
+        </dl>
+        <div id="wlIds" class="ids"></div>
+      </div>
+    </section>
+
+    <!-- ================================================= NGワード -->
+    <section class="page" id="page-ng">
+      <h1>NGワード</h1>
+      <p class="hint">5ch / したらば / JPNKN の本文が対象です。1行に1つ。<code>/…/</code> で囲むと正規表現、大文字小文字は区別しません。変更はすぐに保存され、次に取得したレスから効きます。</p>
+      <div class="card">
+        <textarea id="ngWords" rows="14" placeholder="NGにしたい語句&#10;/正規表現/"></textarea>
+        <div class="saved" id="ngSaved"></div>
+      </div>
+    </section>
+
+    <!-- ================================================= 読み上げ -->
+    <section class="page" id="page-speech">
+      <h1>読み上げ</h1>
+      <p class="hint">変更はすぐに保存されます。</p>
+      <div class="card" id="speech">
+        <label class="inline big"><input type="checkbox" data-s="enabled"> 新着コメントを読み上げる</label>
+        <label for="spEngine">読み上げエンジン</label>
+        <select id="spEngine" data-s="engine">
+          <option value="bouyomi">棒読みちゃん</option>
+          <option value="sapi">SAPI（Windows 標準の音声）</option>
+          <option value="voicevox">VOICEVOX</option>
+        </select>
+        <div class="engine" data-engine="bouyomi">
+          <p class="hint">棒読みちゃんの「その他 → アプリケーション連携」でTCPサーバー（既定 50001）を有効にしてください。声や速さは棒読みちゃん側の設定で読みます。</p>
+          <div class="row">
+            <div><label>ホスト</label><input data-s="host"></div>
+            <div><label>ポート</label><input type="number" data-s="port"></div>
+          </div>
+        </div>
+        <div class="engine" data-engine="sapi">
+          <label>声 <button type="button" class="mini" id="sapiReload">一覧を読み込む</button></label>
+          <select data-s="sapi.voice" id="sapiVoice"></select>
+          <div class="row">
+            <div><label>速さ（-10〜+10）</label><input type="number" min="-10" max="10" data-s="sapi.rate"></div>
+            <div><label>音量（0〜100）</label><input type="number" min="0" max="100" data-s="sapi.volume"></div>
+          </div>
+        </div>
+        <div class="engine" data-engine="voicevox">
+          <p class="hint">VOICEVOX を起動しておいてください（このPCのみ。既定 http://127.0.0.1:50021）。</p>
+          <label>アドレス</label><input data-s="voicevox.endpoint">
+          <label>話者 <button type="button" class="mini" id="vvReload">一覧を読み込む</button></label>
+          <select data-s="voicevox.speaker" id="vvSpeaker" data-num="1"></select>
+          <div class="row">
+            <div><label>話速（0.5〜2.0）</label><input type="number" min="0.5" max="2" step="0.05" data-s="voicevox.speed"></div>
+            <div><label>音高（-0.15〜0.15）</label><input type="number" min="-0.15" max="0.15" step="0.01" data-s="voicevox.pitch"></div>
+            <div><label>抑揚（0〜2.0）</label><input type="number" min="0" max="2" step="0.05" data-s="voicevox.intonation"></div>
+            <div><label>音量（0〜2.0）</label><input type="number" min="0" max="2" step="0.05" data-s="voicevox.volume"></div>
+          </div>
+        </div>
+        <div class="row">
+          <div><label>最大文字数（0=無制限）</label><input type="number" min="0" data-s="maxLength"></div>
+          <div></div>
+        </div>
+        <label>読み上げるソース</label>
+        <div>
+          <label class="inline"><input type="checkbox" data-s="sources.twitch"> Twitch</label>
+          <label class="inline"><input type="checkbox" data-s="sources.5ch"> 5ch</label>
+          <label class="inline"><input type="checkbox" data-s="sources.shitaraba"> したらば</label>
+          <label class="inline"><input type="checkbox" data-s="sources.jpnkn"> JPNKN</label>
+        </div>
+        <label class="inline"><input type="checkbox" data-s="twitchName"> Twitchは名前も読む（「○○さん 本文」）</label>
+        <p class="hint">掲示板は「レスN番さん / したらばN番さん / ジャパンくんN番さん」を前置きします。URLは読まず、YouTubeのみ「ユーチューブ」と読みます。</p>
+        <div class="actions"><button id="spTest" class="sub">テスト読み上げ</button><button id="spStop" class="sub">読み上げを止める</button><span class="saved" id="spSaved"></span></div>
+      </div>
+    </section>
+
+    <!-- ================================================= 表示（OBS） -->
+    <section class="page" id="page-look">
+      <h1>表示（OBS）</h1>
+      <div class="card">
+        <label for="lySelect">レイアウト</label>
+        <div class="pathrow"><select id="lySelect"></select></div>
+        <p class="hint">レイアウトごとに見た目と追加CSSを保存できます。OBS のシーンごとに別のレイアウトのURLを使い分けてください。</p>
+        <div class="pathrow">
+          <input id="lyName" placeholder="新しいレイアウト名（例: ゲーム画面用）" maxlength="40">
+          <button id="lyNew" class="sub">新規作成</button>
+          <button id="lyDup" class="sub">複製して作成</button>
+          <button id="lyRename" class="sub">名前を変更</button>
+          <button id="lyDelete" class="sub">削除</button>
+        </div>
+      </div>
+      <div class="card">
+        <label>OBS に追加するURL（ソース → ブラウザ → URL）</label>
+        <div class="pathrow"><input id="ovUrl" readonly><button id="ovCopy" class="sub">コピー</button></div>
+        <p class="hint">変更はすぐに OBS とプレビューへ反映・保存されます。OBS のソースごとに変えたいときは URL に付けて上書きできます: <code>?max=10</code> 表示件数 / <code>&amp;fade=30</code> 30秒で消す / <code>&amp;size=28</code> 文字サイズ / <code>&amp;top=1</code> 上から並べる / <code>&amp;hide=twitch</code> 特定ソースを隠す</p>
+      </div>
+      <div class="lookgrid" id="look">
+        <div class="lookforms">
+          <fieldset>
+            <legend>共通</legend>
+            <div class="row">
+              <div><label>表示件数</label><input type="number" min="1" max="200" data-a="maxItems"></div>
+              <div><label>消えるまで（秒・0=消さない）</label><input type="number" min="0" max="3600" data-a="fadeSeconds"></div>
+            </div>
+            <div class="row">
+              <div><label>間隔（px）</label><input type="number" min="0" max="60" data-a="gap"></div>
+              <div><label>縁取り（px・0=なし）</label><input type="number" min="0" max="8" step="0.5" data-a="outlineWidth"></div>
+              <div><label>縁取りの色</label><input type="color" data-a="outlineColor"></div>
+            </div>
+            <label class="inline"><input type="checkbox" data-a="newestOnTop"> 新しいものを上に並べる</label>
+          </fieldset>
+          <fieldset>
+            <legend>5ch / したらば / JPNKN</legend>
+            <label>フォント（入力すると候補が出ます。空欄=既定）</label><input list="fonts" data-a="board.fontFamily" placeholder="BIZ UDPGothic など">
+            <div class="row">
+              <div><label>本文サイズ（px）</label><input type="number" min="8" max="120" data-a="board.fontSize"></div>
+              <div><label>名前・ID行（%）</label><input type="number" min="30" max="150" data-a="board.metaScale"></div>
+            </div>
+            <div class="row">
+              <div><label>本文色</label><input type="color" data-a="board.textColor"></div>
+              <div><label>名前色</label><input type="color" data-a="board.nameColor"></div>
+              <div><label>ID色</label><input type="color" data-a="board.idColor"></div>
+            </div>
+            <div class="row">
+              <div><label>背景色</label><input type="color" data-a="board.bgColor"></div>
+              <div><label>背景の濃さ（0〜1）</label><input type="number" min="0" max="1" step="0.05" data-a="board.bgOpacity"></div>
+            </div>
+            <label class="inline"><input type="checkbox" data-a="board.showSite"> サイト名</label>
+            <label class="inline"><input type="checkbox" data-a="board.showNo"> レス番号</label>
+            <label class="inline"><input type="checkbox" data-a="board.showName"> 名前</label>
+            <label class="inline"><input type="checkbox" data-a="board.showId"> ID</label>
+          </fieldset>
+          <fieldset>
+            <legend>Twitch</legend>
+            <label>フォント（入力すると候補が出ます。空欄=既定）</label><input list="fonts" data-a="twitch.fontFamily" placeholder="BIZ UDPGothic など">
+            <div class="row">
+              <div><label>本文サイズ（px）</label><input type="number" min="8" max="120" data-a="twitch.fontSize"></div>
+              <div><label>名前行（%）</label><input type="number" min="30" max="150" data-a="twitch.metaScale"></div>
+            </div>
+            <div class="row">
+              <div><label>スタンプ（px）</label><input type="number" min="8" max="200" data-a="twitch.emoteSize"></div>
+              <div><label>巨大スタンプ（px）</label><input type="number" min="16" max="600" data-a="twitch.giantEmoteSize"></div>
+              <div><label>バッジ（px）</label><input type="number" min="8" max="120" data-a="twitch.badgeSize"></div>
+            </div>
+            <div class="row">
+              <div><label>本文色</label><input type="color" data-a="twitch.textColor"></div>
+              <div><label>名前色</label><input type="color" data-a="twitch.nameColor"></div>
+              <div><label>背景色</label><input type="color" data-a="twitch.bgColor"></div>
+              <div><label>背景の濃さ</label><input type="number" min="0" max="1" step="0.05" data-a="twitch.bgOpacity"></div>
+            </div>
+            <label class="inline"><input type="checkbox" data-a="twitch.useUserColor"> 視聴者の名前色を使う</label>
+            <label class="inline"><input type="checkbox" data-a="twitch.fixNameContrast"> 読みにくい名前の色を自動で調整する（背景色に対して）</label>
+            <label class="inline"><input type="checkbox" data-a="twitch.showSite"> サイト名</label>
+            <label class="inline"><input type="checkbox" data-a="twitch.showName"> 名前</label>
+            <label class="inline"><input type="checkbox" data-a="twitch.showBadges"> バッジ</label>
+          </fieldset>
+          <div class="actions"><button id="lookTest" class="sub">テストコメント</button><button id="lookReset" class="sub">表示を既定に戻す</button><span class="saved" id="lookSaved"></span></div>
+        </div>
+        <div class="lookpreview">
+          <label>プレビュー</label>
+          <iframe id="preview" title="OBS表示のプレビュー"></iframe>
+        </div>
+      </div>
+      <div class="card">
+        <label for="lyCss">追加CSS（このレイアウトだけに効きます）</label>
+        <p class="hint">保存先: <code id="lyCssPath"></code>（メモ帳などで直接編集しても反映されます。直接編集した場合は、OBS のソースを再読み込みしてください）。使えるクラス: <code>.msg</code>（1件）/ <code>.board</code> <code>.twitch</code> / <code>.s-5ch</code> <code>.shitaraba</code> <code>.jpnkn</code> / <code>.badge</code> <code>.meta</code> <code>.no</code> <code>.name</code> <code>.uid</code> <code>.text</code> / <code>img.emote</code></p>
+        <textarea id="lyCss" rows="10" spellcheck="false" placeholder="/* 例: Twitch を表示しない */&#10;.msg.twitch { display: none; }&#10;/* 例: 掲示板の文字をさらに大きく */&#10;:root { --b-size: 40px; }"></textarea>
+        <div class="actions"><button id="lyCssSave">CSSを保存して反映</button><span class="saved" id="lyCssSaved"></span></div>
+      </div>
+      <datalist id="fonts">
+        <option value="BIZ UDPGothic"><option value="BIZ UDGothic"><option value="Yu Gothic UI"><option value="Yu Gothic">
+        <option value="Meiryo"><option value="MS PGothic"><option value="Yu Mincho"><option value="BIZ UDPMincho">
+      </datalist>
+    </section>
+
+    <!-- ================================================= 状態 -->
+    <section class="page" id="page-status">
+      <h1>状態</h1>
+      <p class="hint">「受信」は接続後に新しく届いた件数です。掲示板は、ホワイトリストやNGワードで止めた件数も表示します（本文は表示しません）。</p>
+      <div class="card">
+        <table class="stats">
+          <thead><tr><th>取得元</th><th>状態</th><th>最終取得</th><th>レス数</th><th>受信</th><th>表示</th><th>ホワイトリスト外</th><th>NG</th></tr></thead>
+          <tbody id="statsBody"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <label>ログ</label>
+        <div id="log" class="log"></div>
+      </div>
+    </section>
+
+    <!-- ================================================= 情報 -->
+    <section class="page" id="page-info">
+      <h1>情報</h1>
+      <div class="card">
+        <dl class="kv">
+          <dt>テーマ</dt><dd><select id="uiTheme" style="max-width:260px">
+            <option value="system">Windows の設定に合わせる</option>
+            <option value="light">ライト</option>
+            <option value="dark">ダーク</option>
+          </select></dd>
+          <dt>バージョン</dt><dd id="infoVer">-</dd>
+          <dt>データフォルダ</dt><dd id="infoData">-</dd>
+          <dt>OBS 用URL</dt><dd id="infoUrl">-</dd>
+        </dl>
+        <p class="hint">設定・ログ・WebView2 の作業データは、すべてデータフォルダに保存されます（AppData・レジストリは使いません）。</p>
+        <p class="hint">TchViewer のライセンスは同梱の LICENSE（MIT License）、使用しているライブラリのライセンスは THIRD_PARTY_LICENSES.txt を参照してください。</p>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast" class="toast" role="status"></div>
+<script src="app.js"></script>
+</body>
+</html>
