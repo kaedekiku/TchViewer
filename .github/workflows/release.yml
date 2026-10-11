@@ -1,0 +1,50 @@
+name: Release
+
+# v で始まるタグを送ると、Windows 用の exe をビルドして zip にし、GitHub の Releases に載せる
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check version
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "Cargo.toml の version ($v) とタグ (${{ github.ref_name }}) が合っていません" }
+
+      - name: Test
+        run: cargo test --release
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package as ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out/TchViewer | Out-Null
+          Copy-Item target/release/TchViewer.exe out/TchViewer/
+          Copy-Item LICENSE, THIRD_PARTY_LICENSES.txt out/TchViewer/
+          Copy-Item docs/使い方.html out/TchViewer/
+          # 日本語のファイル名が文字化けしないよう、UTF-8 の名前で zip にする
+          python -c "import os,zipfile; z=zipfile.ZipFile('out/TchViewer-${{ github.ref_name }}.zip','w',zipfile.ZIP_DEFLATED,compresslevel=9); [z.write(os.path.join('out/TchViewer',n),'TchViewer/'+n) for n in sorted(os.listdir('out/TchViewer'))]; z.close()"
+          $hash = (Get-FileHash "out/TchViewer-${{ github.ref_name }}.zip" -Algorithm SHA256).Hash.ToLower()
+          $body = Get-Content RELEASE_NOTES.md -Raw -Encoding utf8
+          "$body`nSHA-256: ``$hash``" | Out-File out/body.md -Encoding utf8
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TchViewer ${{ github.ref_name }}
+          body_path: out/body.md
+          files: out/TchViewer-${{ github.ref_name }}.zip
