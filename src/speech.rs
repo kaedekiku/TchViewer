@@ -11,6 +11,62 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
+/// 読み上げの順番待ちの1件
+#[derive(Clone, Debug)]
+pub struct SpeechItem {
+    pub text: String,
+    /// 画面で「今読んでいるもの」を示すための印（"c:コメントID" / "u:スレ:番号"）
+    pub key: Option<String>,
+    /// 文ではなく通知音を鳴らす
+    pub chime: bool,
+}
+
+impl SpeechItem {
+    pub fn text(text: String, key: Option<String>) -> Self {
+        Self { text, key, chime: false }
+    }
+    pub fn chime(key: String) -> Self {
+        Self { text: String::new(), key: Some(key), chime: true }
+    }
+}
+
+/// 番号だけの読み上げ文（「レス123番さん」/「したらば123番さん」/「ジャパンくん123番さん」）
+pub fn number_text(source: &str, no: u32) -> String {
+    match source {
+        "shitaraba" => format!("したらば{no}番さん"),
+        "jpnkn" => format!("ジャパンくん{no}番さん"),
+        _ => format!("レス{no}番さん"),
+    }
+}
+
+/// 通知音（短い「ポン」）の WAV をその場で作る（音声ファイルを同梱しない）
+pub fn chime_wav() -> Vec<u8> {
+    const RATE: u32 = 22050;
+    let n = RATE as usize * 18 / 100; // 0.18秒
+    let mut pcm = Vec::with_capacity(n * 2);
+    for i in 0..n {
+        let t = i as f32 / RATE as f32;
+        let env = (1.0 - i as f32 / n as f32).powi(2); // だんだん小さく
+        let v = ((t * 1046.5 * std::f32::consts::TAU).sin() * 0.6 + (t * 1568.0 * std::f32::consts::TAU).sin() * 0.25) * env * 0.35;
+        pcm.extend_from_slice(&((v * i16::MAX as f32) as i16).to_le_bytes());
+    }
+    let mut w = Vec::with_capacity(44 + pcm.len());
+    w.extend_from_slice(b"RIFF");
+    w.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
+    w.extend_from_slice(b"WAVEfmt ");
+    w.extend_from_slice(&16u32.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    w.extend_from_slice(&1u16.to_le_bytes()); // モノラル
+    w.extend_from_slice(&RATE.to_le_bytes());
+    w.extend_from_slice(&(RATE * 2).to_le_bytes());
+    w.extend_from_slice(&2u16.to_le_bytes());
+    w.extend_from_slice(&16u16.to_le_bytes());
+    w.extend_from_slice(b"data");
+    w.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
+    w.extend_from_slice(&pcm);
+    w
+}
+
 pub fn speech_text(c: &Comment, sp: &SpeechConfig) -> String {
     let mut body = c.text.clone();
     if c.source == "twitch" && !c.emotes.is_empty() {
@@ -53,9 +109,7 @@ pub fn speech_text(c: &Comment, sp: &SpeechConfig) -> String {
     let prefix = match (c.source.as_str(), c.no) {
         ("twitch", _) if sp.twitch_name => format!("{}さん", c.name),
         ("twitch", _) => String::new(),
-        ("shitaraba", Some(n)) => format!("したらば{n}番さん"),
-        ("jpnkn", Some(n)) => format!("ジャパンくん{n}番さん"),
-        (_, Some(n)) => format!("レス{n}番さん"),
+        (src, Some(n)) => number_text(src, n),
         _ => String::new(),
     };
     if prefix.is_empty() { body } else { format!("{prefix} {body}") }

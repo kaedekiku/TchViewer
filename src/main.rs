@@ -14,10 +14,13 @@ mod boards;
 mod config;
 #[cfg(windows)]
 mod fonts;
+mod image;
 mod layouts;
+mod ng;
 mod server;
 mod speech;
 mod text;
+mod threads;
 #[cfg(windows)]
 mod tts_win;
 mod twitch;
@@ -96,6 +99,18 @@ pub struct App {
     config: RwLock<Config>,
     /// 画面・OBSへ流すメッセージ（JSON文字列）
     tx: broadcast::Sender<String>,
+    /// アプリ画面だけに流すメッセージ（番号読みのレス・スレタブの新着など。OBS には送らない）
+    ui_tx: broadcast::Sender<String>,
+    /// 掲示板の取得に使う HTTP クライアント
+    http: reqwest::Client,
+    /// 巡回中のスレ（監視中・スレタブで開いているもの）
+    watchers: Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<boards::ThreadWatcher>>>>,
+    /// 取得済みのレス（スレタブの表示用。メモリのみ）
+    thread_views: Mutex<std::collections::HashMap<String, threads::ThreadView>>,
+    /// TchViewer 独自のホワイトリスト（手動・自動）
+    own_wl: Mutex<whitelist::OwnWhitelist>,
+    /// 画像ウィンドウで開いた画像（保存用。直近5件・メモリのみ）
+    images: Mutex<VecDeque<(String, String, Vec<u8>)>>,
     /// 直近のコメント（id, コメント, 送信済みJSON）
     history: Mutex<VecDeque<(u64, Comment, String)>>,
     /// ステータス欄用（直近分）
@@ -108,8 +123,8 @@ pub struct App {
     tasks: Mutex<Vec<JoinHandle<()>>>,
     /// ホワイトリスト監視のタスク（接続とは別にやり直せるよう分ける）
     whitelist_task: Mutex<Option<JoinHandle<()>>>,
-    /// 読み上げの順番待ち（世代番号, 文）。停止すると世代が進み、古い世代は読まずに捨てる
-    speech_tx: mpsc::UnboundedSender<(u64, String)>,
+    /// 読み上げの順番待ち（世代番号, 1件）。停止すると世代が進み、古い世代は読まずに捨てる
+    speech_tx: mpsc::UnboundedSender<(u64, speech::SpeechItem)>,
     speech_gen: AtomicU64,
     whitelist: RwLock<whitelist::Whitelist>,
     whitelist_status: Mutex<whitelist::WhitelistStatus>,
@@ -227,7 +242,7 @@ impl App {
         }
         let _ = self.tx.send(data);
         if let Some(text) = speak {
-            self.enqueue_speech(text);
+            self.enqueue_item(speech::SpeechItem::text(text, Some(format!("c:{id}"))));
         }
     }
 
@@ -253,7 +268,16 @@ impl App {
     }
 
     pub fn enqueue_speech(&self, text: String) {
-        let _ = self.speech_tx.send((self.speech_gen.load(Ordering::SeqCst), text));
+        self.enqueue_item(speech::SpeechItem::text(text, None));
+    }
+
+    pub fn enqueue_item(&self, item: speech::SpeechItem) {
+        let _ = self.speech_tx.send((self.speech_gen.load(Ordering::SeqCst), item));
+    }
+
+    /// アプリ画面だけに知らせる
+    pub fn ui_event(&self, v: serde_json::Value) {
+        let _ = self.ui_tx.send(v.to_string());
     }
 
     /// 読み上げ中のものと順番待ちをすべて止める
@@ -272,13 +296,13 @@ impl App {
         *t = Some(tokio::spawn(whitelist::watch(self.clone(), self.config().whitelist_path)));
     }
 
-    /// 設定に従って Twitch 接続と掲示板巡回をやり直す
+    /// 設定に従って Twitch 接続をやり直し、掲示板の巡回対象をそろえる
     pub fn apply_connections(self: &Arc<Self>) {
         let mut tasks = self.tasks.lock().unwrap();
         for t in tasks.drain(..) {
             t.abort();
         }
-        self.stats.lock().unwrap().clear();
+        self.stats.lock().unwrap().retain(|k, _| !k.starts_with("Twitch "));
         let cfg = self.config();
         let channels: Vec<String> = cfg.twitch_channels.iter().map(|c| twitch::normalize_channel(c)).filter(|c| !c.is_empty()).collect();
         for ch in &channels {
@@ -287,62 +311,38 @@ impl App {
         if cfg.twitch_badges && !channels.is_empty() {
             tasks.push(tokio::spawn(badges::run(self.clone(), channels)));
         }
-        let mut watchers = vec![];
-        for raw in cfg.threads.iter().filter(|s| !s.trim().is_empty()) {
-            match boards::parse_thread_url(raw) {
-                Ok(info) => {
-                    let w = boards::ThreadWatcher::new(info);
-                    self.stat(&w.key(), |s| {
-                        s.source = w.info.source().into();
-                        s.site = w.info.site().into();
-                        s.label = w.info.label();
-                        s.state = "connecting".into();
-                    });
-                    watchers.push(w);
-                }
-                Err(e) => self.status(format!("URLエラー: {raw} — {e}")),
-            }
-        }
-        if !watchers.is_empty() {
-            let app = self.clone();
-            tasks.push(tokio::spawn(async move {
-                let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build().expect("http client");
-                // ホワイトリストの初回読み込み（読み直し待ち 300ms を含む）を先に済ませる
-                tokio::time::sleep(Duration::from_millis(700)).await;
-                loop {
-                    let polls = watchers.iter_mut().map(|w| {
-                        let app = app.clone();
-                        let client = client.clone();
-                        async move {
-                            if let Err(e) = w.poll(&app, &client).await {
-                                app.stat(&w.key(), |s| {
-                                    s.state = "error".into();
-                                    s.last_error = format!("[{}] {e}", timestamp());
-                                });
-                                app.status(format!("{} 取得失敗 {}: {e}", w.info.site(), w.info.label()));
-                            }
-                        }
-                    });
-                    futures_util::future::join_all(polls).await;
-                    tokio::time::sleep(app.config().poll_interval()).await;
-                }
-            }));
-        }
+        drop(tasks);
+        self.sync_threads();
     }
 }
 
 /// 読み上げは1本の順番待ちで送る（送信順＝読み上げ順にするため）
-async fn speech_worker(app: Arc<App>, mut rx: mpsc::UnboundedReceiver<(u64, String)>) {
+async fn speech_worker(app: Arc<App>, mut rx: mpsc::UnboundedReceiver<(u64, speech::SpeechItem)>) {
     let client = reqwest::Client::new();
     let mut last_error: Option<Instant> = None;
-    while let Some((generation, text)) = rx.recv().await {
+    while let Some((generation, item)) = rx.recv().await {
         if generation < app.speech_gen.load(Ordering::SeqCst) {
             continue; // 停止より前に積まれたものは読まない
         }
+        // 画面で「今読んでいるもの」を示す
+        if let Some(k) = &item.key {
+            app.ui_event(serde_json::json!({ "type": "speaking", "key": k }));
+        }
         let sp = app.config().speech;
         let started = Instant::now();
-        let result = speech::speak(&sp, &client, &text).await;
-        app.log(format!("読み上げ({}) {:.1}秒: {}", sp.engine, started.elapsed().as_secs_f32(), text.chars().take(30).collect::<String>()));
+        let text = item.text.clone();
+        let result = if item.chime {
+            #[cfg(windows)]
+            {
+                tokio::task::spawn_blocking(|| tts_win::play_wav(&speech::chime_wav())).await.map_err(|e| e.to_string()).and_then(|r| r)
+            }
+            #[cfg(not(windows))]
+            Ok(())
+        } else {
+            speech::speak(&sp, &client, &text).await
+        };
+        let what = if item.chime { "通知音".to_string() } else { text.chars().take(30).collect::<String>() };
+        app.log(format!("読み上げ({}) {:.1}秒: {what}", sp.engine, started.elapsed().as_secs_f32()));
         if let Err(e) = result {
             if last_error.is_none_or(|t| t.elapsed() > Duration::from_secs(30)) {
                 last_error = Some(Instant::now());
@@ -384,10 +384,17 @@ fn main() {
     let _guard = rt.enter();
 
     let (tx, _) = broadcast::channel(1024);
+    let (ui_tx, _) = broadcast::channel(1024);
     let (speech_tx, speech_rx) = mpsc::unbounded_channel();
     let app = Arc::new(App {
         config: RwLock::new(config::load()),
         tx,
+        ui_tx,
+        http: reqwest::Client::builder().timeout(Duration::from_secs(30)).build().unwrap_or_else(|e| fatal(&format!("初期化に失敗しました: {e}"))),
+        watchers: Mutex::new(std::collections::HashMap::new()),
+        thread_views: Mutex::new(std::collections::HashMap::new()),
+        own_wl: Mutex::new(whitelist::OwnWhitelist::load()),
+        images: Mutex::new(VecDeque::new()),
         history: Mutex::new(VecDeque::new()),
         status_history: Mutex::new(VecDeque::new()),
         log_file: Mutex::new(config::LogFile::open()),
@@ -414,6 +421,7 @@ fn main() {
     layouts::migrate(&app.config().appearance);
     app.restart_whitelist();
     app.apply_connections();
+    tokio::spawn(app.clone().run_poller());
     let server = tokio::spawn(server::serve(listener, app.clone()));
 
     if headless {
@@ -426,13 +434,21 @@ fn main() {
     let app_for_setup = app.clone();
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(app.clone())
         .invoke_handler(tauri::generate_handler![api])
         .setup(move |handle| {
-            let win = tauri::WebviewWindowBuilder::new(handle, "main", tauri::WebviewUrl::App("index.html".into()))
+            // デバッグ版のみ: 環境変数 TCHVIEWER_START_PAGE で最初に開くページを指定できる（画面確認用）
+            #[cfg(debug_assertions)]
+            let start = std::env::var("TCHVIEWER_START_PAGE").ok().filter(|p| p.chars().all(|c| c.is_ascii_alphabetic())).map(|p| format!("index.html?page={p}")).unwrap_or_else(|| "index.html".into());
+            #[cfg(not(debug_assertions))]
+            let start = "index.html".to_string();
+            let win = tauri::WebviewWindowBuilder::new(handle, "main", tauri::WebviewUrl::App(start.into()))
                 .title("TchViewer")
                 .inner_size(1180.0, 820.0)
                 .min_inner_size(640.0, 480.0)
+                // 画面内のドラッグ（タブの並べ替え・文字のドラッグ）を使うため、外部ファイルの受け取りは無効にする
+                .disable_drag_drop_handler()
                 // 前回の位置・大きさを当てはめてから表示する（ちらつき防止）
                 .visible(false)
                 // WebView2 の作業データを AppData ではなく exe フォルダの data/webview に置く
@@ -448,21 +464,22 @@ fn main() {
                 tauri::WindowEvent::CloseRequested { .. } => window_state::closing(&w),
                 _ => {}
             });
-            // コメント・状態の変化を画面へ流す
-            let handle = handle.handle().clone();
-            let mut rx = app_for_setup.tx.subscribe();
-            tokio::spawn(async move {
-                use tauri::Emitter;
-                loop {
-                    match rx.recv().await {
-                        Ok(msg) => {
-                            let _ = handle.emit("tv", msg);
+            // コメント・状態の変化（OBS と共通のもの・アプリ画面だけのもの）を画面へ流す
+            for mut rx in [app_for_setup.tx.subscribe(), app_for_setup.ui_tx.subscribe()] {
+                let handle = handle.handle().clone();
+                tokio::spawn(async move {
+                    use tauri::Emitter;
+                    loop {
+                        match rx.recv().await {
+                            Ok(msg) => {
+                                let _ = handle.emit_to("main", "tv", msg);
+                            }
+                            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(_) => break,
                         }
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                        Err(_) => break,
                     }
-                }
-            });
+                });
+            }
             Ok(())
         })
         .run(tauri::generate_context!());

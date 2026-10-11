@@ -1,7 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2/capability",
   "identifier": "default",
-  "description": "TchViewer のメイン画面（exe 内蔵の画面だけ。外部ページには権限を与えない）",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "description": "TchViewer のメイン画面と画像ウィンドウ（exe 内蔵の画面だけ。外部ページには権限を与えない）",
+  "windows": [
+    "main",
+    "image-*"
+  ],
+  "permissions": [
+    "core:default"
+  ]
 }

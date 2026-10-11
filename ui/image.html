@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>画像 - TchViewer</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body { display: flex; flex-direction: column; background: #111; color: #ddd; }
+  .ibar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel); color: var(--fg); border-bottom: 1px solid var(--line); font-size: 12px; }
+  .ibar .u { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+  .stage { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: center; justify-content: center; }
+  .stage img { max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
+  .stage.actual img { max-width: none; max-height: none; cursor: zoom-out; }
+  .note { padding: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="ibar">
+  <span class="u" id="iUrl"></span>
+  <span id="iInfo"></span>
+  <button class="mini" id="iSave">保存</button>
+  <button class="mini" id="iBrowser">ブラウザで開く</button>
+</div>
+<div class="stage" id="iStage"><div class="note" id="iNote">読み込んでいます…</div></div>
+<div id="menu" class="menu" hidden></div>
+<div id="toast" class="toast" role="status"></div>
+<script src="common.js"></script>
+<script src="image.js"></script>
+</body>
+</html>

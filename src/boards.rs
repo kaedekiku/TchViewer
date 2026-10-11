@@ -1,6 +1,7 @@
 //! 5ch / JPNKN（dat差分取得）と したらば（rawmode差分取得）
 
-use crate::text::{html_to_text, ng_hit};
+use crate::text::html_to_text;
+use serde::Serialize;
 use crate::{App, Comment};
 use encoding_rs::{EUC_JP, SHIFT_JIS};
 use reqwest::header::{RANGE, USER_AGENT};
@@ -87,33 +88,90 @@ pub fn extract_id(date_field: &str) -> String {
     String::new()
 }
 
+/// スレタイだけを軽く取得する（登録前の確認用。先頭の1レスだけ読む）
+pub async fn fetch_title(info: &ThreadInfo, client: &reqwest::Client) -> Result<String, String> {
+    match info {
+        ThreadInfo::Dat { host, board, key, .. } => {
+            let url = format!("https://{host}/{board}/dat/{key}.dat");
+            let res = client.get(&url).header(USER_AGENT, UA_DAT).header(RANGE, "bytes=0-8191").send().await.map_err(|e| e.to_string())?;
+            if !res.status().is_success() {
+                return Err(format!("HTTP {}", res.status().as_u16()));
+            }
+            let buf = res.bytes().await.map_err(|e| e.to_string())?;
+            let end = buf.iter().position(|&b| b == b'\n').unwrap_or(buf.len());
+            let (line, _, _) = SHIFT_JIS.decode(&buf[..end]);
+            Ok(line.split("<>").nth(4).map(html_to_text).unwrap_or_default())
+        }
+        ThreadInfo::Shitaraba { dir, bbs, key } => {
+            let url = format!("https://jbbs.shitaraba.net/bbs/rawmode.cgi/{dir}/{bbs}/{key}/1-1");
+            let res = client.get(&url).header(USER_AGENT, UA_BROWSER).send().await.map_err(|e| e.to_string())?;
+            let buf = res.bytes().await.map_err(|e| e.to_string())?;
+            let (text, _, _) = EUC_JP.decode(&buf);
+            Ok(text.lines().next().and_then(|l| l.split("<>").nth(5)).map(html_to_text).unwrap_or_default())
+        }
+    }
+}
+
+/// 取得したスレを保持する上限（5ch は 1000 + システムレス）
+pub const POSTS_MAX: usize = 1100;
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Post {
+    pub no: u32,
+    pub name: String,
+    pub mail: String,
+    /// 日付欄（ID などを含む元の表記）
+    pub date: String,
+    pub uid: String,
+    pub text: String,
+}
+
+/// 1つのスレの巡回。「監視する（OBS表示・読み上げの対象）」と「スレタブで開いている」を別々に持つ
 pub struct ThreadWatcher {
     pub info: ThreadInfo,
     /// dat: 改行まで読み終えたバイト数
     bytes: u64,
     res_no: u32,
     first: bool,
-    title: String,
+    pub title: String,
     full_notified: bool,
+    /// 監視中か
+    pub monitored: bool,
+    /// 監視を始めた時点のレス番号（これより後のレスだけ扱う）。None は「初回取得時に決める」
+    monitor_from: Option<u32>,
+    /// スレタブで開いているか
+    pub open: bool,
 }
 
-#[derive(Clone, Debug)]
-pub struct Post {
-    pub no: u32,
-    pub name: String,
-    pub uid: String,
-    pub text: String,
+impl ThreadInfo {
+    /// read.cgi の URL（表記をそろえたもの）
+    pub fn read_url(&self) -> String {
+        match self {
+            ThreadInfo::Dat { host, board, key, .. } => format!("https://{host}/test/read.cgi/{board}/{key}/"),
+            ThreadInfo::Shitaraba { dir, bbs, key } => format!("https://jbbs.shitaraba.net/bbs/read.cgi/{dir}/{bbs}/{key}/"),
+        }
+    }
+    /// 「状態」ページ・スレタブでの識別子（"5ch news4vip/123"）
+    pub fn key(&self) -> String {
+        format!("{} {}", self.site(), self.label())
+    }
 }
-
 
 impl ThreadWatcher {
     pub fn new(info: ThreadInfo) -> Self {
-        Self { info, bytes: 0, res_no: 0, first: true, title: String::new(), full_notified: false }
+        Self { info, bytes: 0, res_no: 0, first: true, title: String::new(), full_notified: false, monitored: false, monitor_from: None, open: false }
     }
 
-    /// 「状態」ページでの識別子
     pub fn key(&self) -> String {
-        format!("{} {}", self.info.site(), self.info.label())
+        self.info.key()
+    }
+
+    /// 監視の切り替え。途中から監視を始めたら、それ以降に届いたレスだけを扱う
+    pub fn set_monitored(&mut self, on: bool) {
+        if on && !self.monitored {
+            self.monitor_from = if self.first { None } else { Some(self.res_no) };
+        }
+        self.monitored = on;
     }
 
     pub async fn poll(&mut self, app: &Arc<App>, client: &reqwest::Client) -> Result<(), String> {
@@ -121,15 +179,25 @@ impl ThreadWatcher {
             ThreadInfo::Dat { host, board, key, .. } => self.poll_dat(client, &host, &board, &key).await?,
             ThreadInfo::Shitaraba { dir, bbs, key } => self.poll_shitaraba(client, &dir, &bbs, &key).await?,
         };
-        let (title, res_no) = (self.title.clone(), self.res_no);
-        app.stat(&self.key(), |s| {
-            s.state = "ok".into();
-            s.last_fetch = crate::timestamp();
-            s.last_error.clear();
-            s.title = title;
-            s.res_count = res_no;
-        });
-        self.deliver(app, posts);
+        if self.monitored {
+            let (title, res_no) = (self.title.clone(), self.res_no);
+            app.stat(&self.key(), |s| {
+                s.state = "ok".into();
+                s.last_fetch = crate::timestamp();
+                s.last_error.clear();
+                s.title = title;
+                s.res_count = res_no;
+            });
+        }
+        let was_first = std::mem::replace(&mut self.first, false);
+        // スレタブ・再表示用に保持する
+        app.store_posts(&self.key(), &self.info.read_url(), &self.title, &posts, was_first);
+        if self.monitored {
+            self.deliver(app, &posts, was_first);
+        }
+        if self.open && !posts.is_empty() {
+            app.thread_updated(&self.key(), &self.info.read_url(), &self.title, &posts);
+        }
         Ok(())
     }
 
@@ -170,11 +238,13 @@ impl ThreadWatcher {
                     self.title = html_to_text(t);
                 }
             }
-            let uid = extract_id(f.get(2).copied().unwrap_or(""));
+            let date = html_to_text(f.get(2).copied().unwrap_or(""));
             posts.push(Post {
                 no: self.res_no,
                 name: html_to_text(f.first().copied().unwrap_or("")),
-                uid,
+                mail: html_to_text(f.get(1).copied().unwrap_or("")),
+                uid: extract_id(&date),
+                date,
                 text: html_to_text(f.get(3).copied().unwrap_or("")),
             });
         }
@@ -204,70 +274,87 @@ impl ThreadWatcher {
                 }
             }
             self.res_no = no;
+            let uid = f.get(6).copied().unwrap_or("").trim().to_string();
+            let date = html_to_text(f.get(3).copied().unwrap_or(""));
             posts.push(Post {
                 no,
                 name: html_to_text(f.get(1).copied().unwrap_or("")),
-                uid: f.get(6).copied().unwrap_or("").trim().to_string(),
+                mail: html_to_text(f.get(2).copied().unwrap_or("")),
+                date: if uid.is_empty() { date } else { format!("{date} ID:{uid}") },
+                uid,
                 text: html_to_text(f.get(4).copied().unwrap_or("")),
             });
         }
         Ok(posts)
     }
 
-    fn deliver(&mut self, app: &Arc<App>, posts: Vec<Post>) {
-        let (source, site) = match &self.info {
-            ThreadInfo::Dat { source, site, .. } => (*source, *site),
-            ThreadInfo::Shitaraba { .. } => ("shitaraba", "したらば"),
-        };
-        let mut initial = false;
-        let mut posts = posts;
-        if self.first {
-            self.first = false;
-            initial = true;
-            let keep = app.config().initial_posts.min(posts.len());
-            posts.drain(..posts.len() - keep);
+    /// 監視中のスレの新着を処理する（NG → 自動ホワイトリスト → ホワイトリスト → OBS表示・読み上げ）
+    fn deliver(&mut self, app: &Arc<App>, posts: &[Post], was_first: bool) {
+        let (source, site) = (self.info.source(), self.info.site());
+        let key = self.key();
+        // 監視を始めた最初の取得: 既存レスは「接続時に表示する既存レス数」だけ表示（読み上げない）
+        if was_first && self.monitor_from.is_none() {
+            self.monitor_from = Some(self.res_no);
             let title = if self.title.is_empty() { self.info.label() } else { self.title.clone() };
             app.status(format!("{site} 接続: {title}（{}レス）", self.res_no));
+            let keep = app.config().initial_posts.min(posts.len());
+            for p in &posts[posts.len() - keep..] {
+                if app.ng_check(&key, p).is_none() && app.allows(&p.uid) {
+                    app.emit_comment(self.comment(p, true));
+                }
+            }
+            return;
         }
-        let ng_words = app.config().ng_words;
-        let whitelist = app.whitelist();
-        let key = self.key();
-        for p in posts {
-            if !initial {
-                app.stat(&key, |s| s.received += 1);
-            }
-            // ホワイトリスト（LiveFake連携）のIDだけ通す → ワードNGで除外
-            if !whitelist.allows(&p.uid) {
-                if !initial {
-                    app.stat(&key, |s| s.blocked_whitelist += 1);
-                }
+        let from = self.monitor_from.unwrap_or(0);
+        for p in posts.iter().filter(|p| p.no > from) {
+            app.stat(&key, |s| s.received += 1);
+            if let Some(hit) = app.ng_check(&key, p) {
+                app.log(format!("{}で除外: {site} {}", hit.reason, p.no));
+                app.stat(&key, |s| s.blocked_ng += 1);
                 continue;
             }
-            if let Some(w) = ng_hit(&ng_words, &p.text) {
-                app.log(format!("NG({w}) で除外: {site} {}", p.no));
-                if !initial {
-                    app.stat(&key, |s| s.blocked_ng += 1);
-                }
-                continue;
-            }
-            if !initial {
+            app.auto_whitelist(p);
+            if app.allows(&p.uid) {
                 app.stat(&key, |s| s.passed += 1);
+                app.emit_comment(self.comment(p, false));
+            } else {
+                app.stat(&key, |s| s.blocked_whitelist += 1);
+                app.unlisted(&key, &self.info.read_url(), source, site, &self.title, p);
             }
-            app.emit_comment(Comment {
-                source: source.into(),
-                site: site.into(),
-                thread: self.title.clone(),
-                no: Some(p.no),
-                name: p.name,
-                uid: p.uid,
-                text: p.text,
-                initial,
-                ..Default::default()
-            });
         }
         if source != "shitaraba" && self.res_no >= 1000 && !self.full_notified {
             self.full_notified = true;
             app.status(format!("{site} スレが埋まりました: {}", self.title));
+        }
+    }
+
+    /// デバッグ版のみ: 試しのレスを新着として流し込む（動作確認用）
+    #[cfg(debug_assertions)]
+    pub fn inject(&mut self, app: &Arc<App>, name: &str, uid: &str, text: &str) -> u32 {
+        self.res_no += 1;
+        let p = Post { no: self.res_no, name: name.into(), mail: String::new(), date: format!("テスト ID:{uid}"), uid: uid.into(), text: text.into() };
+        let posts = vec![p];
+        app.store_posts(&self.key(), &self.info.read_url(), &self.title, &posts, false);
+        if self.monitored {
+            self.deliver(app, &posts, false);
+        }
+        if self.open {
+            app.thread_updated(&self.key(), &self.info.read_url(), &self.title, &posts);
+        }
+        self.res_no
+    }
+
+    fn comment(&self, p: &Post, initial: bool) -> Comment {
+        Comment {
+            source: self.info.source().into(),
+            site: self.info.site().into(),
+            thread: self.title.clone(),
+            no: Some(p.no),
+            name: p.name.clone(),
+            uid: p.uid.clone(),
+            text: p.text.clone(),
+            initial,
+            ..Default::default()
         }
     }
 }

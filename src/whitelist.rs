@@ -230,3 +230,124 @@ mod tests {
         assert!(!old.allows("AbC0"));
     }
 }
+
+// ---------------------------------------------------------------- TchViewer 独自のホワイトリスト
+// LiveFake に依存せずに使えるよう、手動・自動で追加した ID を data/whitelist.json に保存する。
+// 日本時間の日付が変わったら空にする（5ch の ID は日替わりのため）。
+// 一覧から外した ID は、手動で入れ直さない限り、その日のうちは自動で再追加しない。
+
+#[derive(Clone, Debug, Default, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnEntry {
+    pub id: String,
+    /// "manual"（手動）/ "auto"（登録ワードで自動）
+    pub source: String,
+    /// 自動追加のきっかけになったワードなど
+    pub reason: String,
+    pub time: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct OwnWhitelist {
+    pub date: String,
+    pub entries: Vec<OwnEntry>,
+    /// 今日、一覧から外した ID（自動で再追加しない）
+    pub removed: Vec<String>,
+}
+
+fn own_path() -> PathBuf {
+    crate::config::data_dir().join("whitelist.json")
+}
+
+impl OwnWhitelist {
+    pub fn load() -> Self {
+        let mut w: OwnWhitelist = std::fs::read_to_string(own_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+        w.roll();
+        w
+    }
+
+    fn save(&self) {
+        if let Ok(s) = serde_json::to_string_pretty(self) {
+            let _ = std::fs::create_dir_all(crate::config::data_dir());
+            let tmp = own_path().with_extension("json.tmp");
+            if std::fs::write(&tmp, s).is_ok() {
+                let _ = std::fs::rename(&tmp, own_path());
+            }
+        }
+    }
+
+    /// 日付が変わっていたら空にする
+    pub fn roll(&mut self) {
+        let today = jst_today();
+        if self.date != today {
+            *self = OwnWhitelist { date: today, ..Default::default() };
+        }
+    }
+
+    pub fn contains(&mut self, id: &str) -> bool {
+        self.roll();
+        !id.is_empty() && self.entries.iter().any(|e| e.id == id)
+    }
+
+    /// 手動で追加（外した印も消す）
+    pub fn add_manual(&mut self, id: &str) -> bool {
+        self.roll();
+        let id = id.trim();
+        if id.is_empty() || id.chars().count() > MAX_ID_LEN || id.chars().any(char::is_whitespace) {
+            return false;
+        }
+        self.removed.retain(|r| r != id);
+        if !self.entries.iter().any(|e| e.id == id) {
+            self.entries.push(OwnEntry { id: id.into(), source: "manual".into(), reason: String::new(), time: crate::timestamp() });
+        }
+        self.save();
+        true
+    }
+
+    /// 登録ワードによる自動追加。追加したら true
+    pub fn add_auto(&mut self, id: &str, word: &str, limit: u32) -> bool {
+        self.roll();
+        if id.is_empty() || self.entries.iter().any(|e| e.id == id) || self.removed.iter().any(|r| r == id) {
+            return false;
+        }
+        let autos = self.entries.iter().filter(|e| e.source == "auto").count() as u32;
+        if autos >= limit {
+            return false;
+        }
+        self.entries.push(OwnEntry { id: id.into(), source: "auto".into(), reason: word.into(), time: crate::timestamp() });
+        self.save();
+        true
+    }
+
+    pub fn remove(&mut self, id: &str) {
+        self.roll();
+        self.entries.retain(|e| e.id != id);
+        if !self.removed.iter().any(|r| r == id) {
+            self.removed.push(id.into());
+        }
+        self.save();
+    }
+
+    pub fn auto_count(&mut self) -> usize {
+        self.roll();
+        self.entries.iter().filter(|e| e.source == "auto").count()
+    }
+}
+
+#[cfg(test)]
+mod own_tests {
+    use super::*;
+
+    #[test]
+    fn auto_rules() {
+        let mut w = OwnWhitelist { date: jst_today(), ..Default::default() };
+        // 保存先に書かないよう save を通さない操作だけ確かめる（entries を直接操作）
+        w.entries.push(OwnEntry { id: "a".into(), source: "auto".into(), ..Default::default() });
+        w.removed.push("b".into());
+        assert!(w.entries.iter().any(|e| e.id == "a"));
+        assert!(w.removed.iter().any(|r| r == "b"));
+        let mut old = OwnWhitelist { date: "2000-01-01".into(), entries: w.entries.clone(), removed: vec![] };
+        assert!(!old.contains("a")); // 日付が変わったら空
+    }
+}

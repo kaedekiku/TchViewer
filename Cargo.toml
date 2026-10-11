@@ -23,6 +23,9 @@ encoding_rs = "0.8"
 fancy-regex = "0.14"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+base64 = "0.22"
+url = "2"
 windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(windows)'.dependencies]

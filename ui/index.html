@@ -7,17 +7,13 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand"><span class="logo">T</span> TchViewer <span id="ver" class="ver"></span></div>
-  <div id="lamps" class="lamps" aria-label="接続状態"></div>
-</header>
-
 <div class="shell">
   <nav class="side" aria-label="メニュー">
     <button data-page="viewer" class="active">ビュワー</button>
+    <button data-page="threads">スレ</button>
     <button data-page="connect">接続</button>
-    <button data-page="livefake">LiveFake連携</button>
-    <button data-page="ng">NGワード</button>
+    <button data-page="whitelist">ホワイトリスト</button>
+    <button data-page="ng">NG</button>
     <button data-page="speech">読み上げ</button>
     <button data-page="look">表示（OBS）</button>
     <button data-page="status">状態</button>
@@ -27,69 +23,138 @@
   <main>
     <!-- ================================================= ビュワー -->
     <section class="page active" id="page-viewer">
-      <div class="toolbar">
-        <div class="chips" id="vFilter">
-          <label class="chip twitch"><input type="checkbox" value="twitch" checked> Twitch</label>
-          <label class="chip s-5ch"><input type="checkbox" value="5ch" checked> 5ch</label>
-          <label class="chip shitaraba"><input type="checkbox" value="shitaraba" checked> したらば</label>
-          <label class="chip jpnkn"><input type="checkbox" value="jpnkn" checked> JPNKN</label>
+      <div class="vbar">
+        <div class="chips" id="vFilter" title="表示するソース">
+          <label class="chip twitch"><input type="checkbox" value="twitch" checked>Twitch</label>
+          <label class="chip s-5ch"><input type="checkbox" value="5ch" checked>5ch</label>
+          <label class="chip shitaraba"><input type="checkbox" value="shitaraba" checked>したらば</label>
+          <label class="chip jpnkn"><input type="checkbox" value="jpnkn" checked>JPNKN</label>
         </div>
-        <input id="vSearch" type="search" placeholder="絞り込み（名前・ID・本文）">
-        <label class="inline"><input id="vAuto" type="checkbox" checked> 自動スクロール</label>
-        <button id="vClear" class="sub">表示をクリア</button>
-        <button id="vTest" class="sub">テストコメント</button>
+        <span class="grow"></span>
+        <label class="tog" title="新しいコメントが来たら一番下へ移動する"><input id="vAuto" type="checkbox" checked>自動スクロール</label>
+        <label class="tog" title="ビュワーの下に「番号だけ読んだレス」を表示する"><input id="vPanel" type="checkbox">番号読み欄</label>
+        <button id="vClear" class="mini" title="ビュワーの表示を消す（OBS には影響しません）">クリア</button>
+        <button id="vTest" class="mini" title="テストコメントを送る">テスト</button>
       </div>
-      <p class="hint">OBSに表示されるものと同じ内容です（掲示板はホワイトリストとNGワードを通過したレスだけ）。</p>
-      <div id="vList" class="vlist" aria-live="polite"></div>
-      <div id="vEmpty" class="empty">まだコメントはありません。「接続」でTwitchチャンネルやスレッドを設定してください。</div>
+      <div class="vsplit">
+        <div id="vList" class="vlist" aria-live="polite"></div>
+        <div id="vEmpty" class="empty">まだコメントはありません。「接続」で Twitch チャンネルやスレッドを登録してください。</div>
+        <div id="uPanel" class="upanel" hidden>
+          <div class="uhead">番号だけ読んだレス <span class="hint">（ホワイトリストに無い ID のレス。OBS には出ません）</span><span class="grow"></span><button id="uClear" class="mini">クリア</button></div>
+          <div id="uList" class="ulist"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================= スレ -->
+    <section class="page" id="page-threads">
+      <form id="tUrlForm" class="urlbar">
+        <input id="tUrl" placeholder="スレッドの URL を入力して Enter（5ch / したらば / JPNKN）" autocomplete="off">
+        <button type="submit">開く</button>
+      </form>
+      <div id="tTabs" class="tabs" role="tablist"></div>
+      <div id="tHead" class="thead" hidden>
+        <span id="tTitle" class="ttitle"></span>
+        <span id="tFilter" class="tfilter" hidden></span>
+        <span class="grow"></span>
+        <label class="tog" title="ホワイトリストの ID のレスを OBS に表示・読み上げし、それ以外は番号だけ読む"><input id="tMonitor" type="checkbox">監視する</label>
+        <button id="tBottom" class="mini">最新へ</button>
+        <button id="tBrowser" class="mini">ブラウザで開く</button>
+      </div>
+      <div id="tList" class="tlist"></div>
+      <div id="tEmpty" class="empty">上の欄にスレッドの URL を入れて開いてください。開いたスレはタブで並び、ドラッグで並べ替えられます。</div>
+      <div id="dropZone" class="dropzone" hidden>
+        <div data-scope="global">ここにドロップ → NGワードに追加（全体）</div>
+        <div data-scope="thread">ここにドロップ → NGワードに追加（このスレだけ）</div>
+      </div>
     </section>
 
     <!-- ================================================= 接続 -->
     <section class="page" id="page-connect">
       <h1>接続</h1>
-      <p class="hint">入力したら「保存して接続」を押してください。押すと接続し直します。</p>
       <div class="card">
-        <label for="cTwitch">Twitchチャンネル（1行に1つ。チャンネルID または URL）</label>
-        <textarea id="cTwitch" rows="3" placeholder="example_channel"></textarea>
-        <label class="inline"><input id="cBadges" type="checkbox"> Twitch のバッジ画像を取得する（非公式の方法。表示がおかしいときはオフにしてください）</label>
-        <label for="cThreads">スレッドURL（1行に1つ。5ch / したらば / JPNKN）</label>
-        <textarea id="cThreads" rows="4" placeholder="https://mi.5ch.io/test/read.cgi/news4vip/1234567890/&#10;https://jbbs.shitaraba.net/bbs/read.cgi/internet/20196/1780204030/&#10;https://bbs.jpnkn.com/test/read.cgi/board/1234567890/"></textarea>
-        <div class="row">
-          <div><label for="cPoll">掲示板の巡回間隔（秒・10〜300）</label><input id="cPoll" type="number" min="10" max="300"></div>
-          <div><label for="cInitial">接続時に表示する既存レス数</label><input id="cInitial" type="number" min="0" max="1000"></div>
-        </div>
-        <div class="actions"><button id="cSave">保存して接続</button></div>
-        <p class="hint">スレが1000に達したら、次スレのURLに差し替えて保存してください。</p>
+        <h2>Twitch チャンネル</h2>
+        <form id="cTwForm" class="addrow">
+          <input id="cTwInput" placeholder="チャンネル ID または URL を入れて Enter（例: https://www.twitch.tv/example）" autocomplete="off">
+          <button type="submit">追加</button>
+        </form>
+        <div id="cTwList" class="chiplist"></div>
+        <label class="inline"><input id="cBadges" type="checkbox"> バッジ画像を取得する（非公式の方法。表示がおかしいときはオフ）</label>
+      </div>
+      <div class="card">
+        <h2>監視するスレッド</h2>
+        <p class="hint">ホワイトリストの ID のレスを OBS に表示・読み上げし、それ以外は「番号だけ読む」などの扱いにします（読み方は「読み上げ」で設定）。行はドラッグで並べ替えられます。</p>
+        <form id="cThForm" class="addrow">
+          <input id="cThInput" placeholder="スレッドの URL を貼り付けて Enter（複数行もまとめて追加できます）" autocomplete="off">
+          <button type="submit">追加</button>
+        </form>
+        <div id="cThMsg" class="msg"></div>
+        <div id="cThList" class="rowlist"></div>
+        <details class="more">
+          <summary>詳細設定</summary>
+          <div class="row">
+            <div><label for="cPoll">巡回間隔（秒・10〜300）</label><input id="cPoll" type="number" min="10" max="300"></div>
+            <div><label for="cInitial">監視を始めたときに表示する既存レス数</label><input id="cInitial" type="number" min="0" max="1000"></div>
+          </div>
+        </details>
       </div>
     </section>
 
-    <!-- ================================================= LiveFake連携 -->
-    <section class="page" id="page-livefake">
-      <h1>LiveFake連携（TCVホワイトリスト）</h1>
-      <p class="hint">5ch / したらば / JPNKN は、LiveFake の配信ホワイトリストに入っているID（日本時間の今日の分）のレスだけを表示・読み上げます。一覧が空のときは1件も表示しません。</p>
+    <!-- ================================================= ホワイトリスト -->
+    <section class="page" id="page-whitelist">
+      <h1>ホワイトリスト</h1>
+      <p class="hint">ここに入っている ID（日本時間の今日の分）のレスだけを OBS に表示し、本文まで読み上げます。日付が変わると空になります。</p>
       <div class="card">
-        <label>LiveFake の data フォルダ（またはファイル）</label>
-        <div class="pathrow"><input id="wlPath" readonly placeholder="未設定"><button id="wlPickFolder">フォルダを選ぶ</button><button id="wlPickFile" class="sub">ファイルを選ぶ</button><button id="wlClear" class="sub">解除</button></div>
-        <p class="hint">LiveFake の 設定 &gt; TchViewer連携 に表示される data フォルダを選んでください。</p>
+        <h2>TchViewer の一覧</h2>
+        <form id="wlAddForm" class="addrow">
+          <input id="wlAddInput" placeholder="ID を入れて Enter（スレタブの ID のメニューからも追加できます）" autocomplete="off">
+          <button type="submit">追加</button>
+        </form>
+        <div id="wlOwn" class="wltable"></div>
+        <details class="more" id="wlRemovedBox">
+          <summary>今日外した ID（自動では入れ直しません）</summary>
+          <div id="wlRemoved" class="wltable"></div>
+        </details>
       </div>
       <div class="card">
+        <h2>自動追加 <span class="tag">試験的</span></h2>
+        <p class="hint">登録ワードを含むレスの ID を、自動でホワイトリストに入れます（監視中のスレのみ）。NG に当たるレスは対象外です。登録ワードを知っている人なら誰でも自分を入れられるので、推測されにくい言葉にしてください。</p>
+        <label class="inline"><input id="wlAutoOn" type="checkbox"> 自動追加を使う</label>
+        <div class="row">
+          <div style="flex:3"><label for="wlAutoWords">登録ワード（1行に1つ。<code>/…/</code> で正規表現）</label><textarea id="wlAutoWords" rows="3"></textarea></div>
+          <div><label for="wlAutoLimit">1日の上限（1〜100件）</label><input id="wlAutoLimit" type="number" min="1" max="100"><div class="hint" id="wlAutoCount"></div></div>
+        </div>
+        <div class="saved" id="wlOptsSaved"></div>
+      </div>
+      <div class="card">
+        <h2>LiveFake の配信ホワイトリスト（任意）</h2>
+        <p class="hint">LiveFake の 設定 &gt; TchViewer連携 で「TCVホワイトリスト」をオンにして、LiveFake の data フォルダを選ぶと、LiveFake の一覧も使います（読み取りだけ）。</p>
+        <div class="pathrow"><input id="wlPath" readonly placeholder="未設定"><button id="wlPickFolder">フォルダを選ぶ</button><button id="wlPickFile" class="sub">ファイルを選ぶ</button><button id="wlClear" class="sub">解除</button></div>
         <dl class="kv">
           <dt>状態</dt><dd id="wlState">-</dd>
           <dt>ファイルの日付</dt><dd><span id="wlDate">-</span>（今日: <span id="wlToday">-</span>）</dd>
-          <dt>有効なID</dt><dd><span id="wlCount">0</span>件</dd>
+          <dt>有効な ID</dt><dd><span id="wlCount">0</span>件</dd>
         </dl>
         <div id="wlIds" class="ids"></div>
       </div>
     </section>
 
-    <!-- ================================================= NGワード -->
+    <!-- ================================================= NG -->
     <section class="page" id="page-ng">
-      <h1>NGワード</h1>
-      <p class="hint">5ch / したらば / JPNKN の本文が対象です。1行に1つ。<code>/…/</code> で囲むと正規表現、大文字小文字は区別しません。変更はすぐに保存され、次に取得したレスから効きます。</p>
+      <h1>NG</h1>
+      <p class="hint">5ch / したらば / JPNKN が対象です。NG に当たったレスは OBS に出さず、読み上げず、自動ホワイトリストの対象にもしません。ワードと名前は <code>/…/</code> で正規表現（大文字小文字は区別しない）、ID は完全一致です。スレタブで文字を選んで右クリック、またはドラッグしても追加できます。</p>
       <div class="card">
-        <textarea id="ngWords" rows="14" placeholder="NGにしたい語句&#10;/正規表現/"></textarea>
-        <div class="saved" id="ngSaved"></div>
+        <form id="ngForm" class="ngform">
+          <select id="ngKind"><option value="words">ワード</option><option value="names">名前</option><option value="ids">ID</option></select>
+          <input id="ngValue" placeholder="NG にする文字" autocomplete="off">
+          <select id="ngMode"><option value="abone">通常あぼーん</option><option value="hide">透明あぼーん</option></select>
+          <select id="ngScope"></select>
+          <button type="submit">追加</button>
+        </form>
       </div>
+      <div class="card"><h2>ワード <span class="count" id="ngCountWords"></span></h2><div id="ngWords" class="ngtable"></div></div>
+      <div class="card"><h2>名前 <span class="count" id="ngCountNames"></span></h2><div id="ngNames" class="ngtable"></div></div>
+      <div class="card"><h2>ID <span class="count" id="ngCountIds"></span></h2><div id="ngIds" class="ngtable"></div></div>
     </section>
 
     <!-- ================================================= 読み上げ -->
@@ -132,8 +197,14 @@
           </div>
         </div>
         <div class="row">
+          <div><label for="spUnlisted">監視中のスレで、ホワイトリストに無い ID のレス</label>
+            <select id="spUnlisted" data-s="unlistedMode">
+              <option value="number">番号だけ読む（「レス123番さん」）</option>
+              <option value="chime">通知音だけ鳴らす</option>
+              <option value="full">本文まで読む</option>
+              <option value="none">読まない</option>
+            </select></div>
           <div><label>最大文字数（0=無制限）</label><input type="number" min="0" data-s="maxLength"></div>
-          <div></div>
         </div>
         <label>読み上げるソース</label>
         <div>
@@ -143,7 +214,7 @@
           <label class="inline"><input type="checkbox" data-s="sources.jpnkn"> JPNKN</label>
         </div>
         <label class="inline"><input type="checkbox" data-s="twitchName"> Twitchは名前も読む（「○○さん 本文」）</label>
-        <p class="hint">掲示板は「レスN番さん / したらばN番さん / ジャパンくんN番さん」を前置きします。URLは読まず、YouTubeのみ「ユーチューブ」と読みます。</p>
+        <p class="hint">掲示板は「レスN番さん / したらばN番さん / ジャパンくんN番さん」を前置きします。URLは読まず、YouTubeのみ「ユーチューブ」と読みます。LiveFake でも読み上げている場合は、二重にならないよう LiveFake 側をオフにしてください。</p>
         <div class="actions"><button id="spTest" class="sub">テスト読み上げ</button><button id="spStop" class="sub">読み上げを止める</button><span class="saved" id="spSaved"></span></div>
       </div>
     </section>
@@ -241,16 +312,13 @@
         <textarea id="lyCss" rows="10" spellcheck="false" placeholder="/* 例: Twitch を表示しない */&#10;.msg.twitch { display: none; }&#10;/* 例: 掲示板の文字をさらに大きく */&#10;:root { --b-size: 40px; }"></textarea>
         <div class="actions"><button id="lyCssSave">CSSを保存して反映</button><span class="saved" id="lyCssSaved"></span></div>
       </div>
-      <datalist id="fonts">
-        <option value="BIZ UDPGothic"><option value="BIZ UDGothic"><option value="Yu Gothic UI"><option value="Yu Gothic">
-        <option value="Meiryo"><option value="MS PGothic"><option value="Yu Mincho"><option value="BIZ UDPMincho">
-      </datalist>
+      <datalist id="fonts"></datalist>
     </section>
 
     <!-- ================================================= 状態 -->
     <section class="page" id="page-status">
       <h1>状態</h1>
-      <p class="hint">「受信」は接続後に新しく届いた件数です。掲示板は、ホワイトリストやNGワードで止めた件数も表示します（本文は表示しません）。</p>
+      <p class="hint">「受信」は監視を始めた後に新しく届いた件数です。掲示板は、ホワイトリストに無い ID で表示しなかった件数（番号だけ読んだ件数）と、NG で除外した件数も表示します。</p>
       <div class="card">
         <table class="stats">
           <thead><tr><th>取得元</th><th>状態</th><th>最終取得</th><th>レス数</th><th>受信</th><th>表示</th><th>ホワイトリスト外</th><th>NG</th></tr></thead>
@@ -277,13 +345,30 @@
           <dt>データフォルダ</dt><dd id="infoData">-</dd>
           <dt>OBS 用URL</dt><dd id="infoUrl">-</dd>
         </dl>
+      </div>
+      <div class="card">
+        <h2>画像</h2>
+        <p class="hint">スレタブで画像の URL をクリックすると、TchViewer の別ウィンドウで開きます。画像の上で右クリックすると保存できます。</p>
+        <label>画像の保存先</label>
+        <div class="pathrow"><input id="imgDir" readonly placeholder="未設定（初めて保存するときに選びます）"><button id="imgDirPick" class="sub">変更</button></div>
+        <div class="row">
+          <div><label for="imgMax">取得する画像の上限（MB・1〜100）</label><input id="imgMax" type="number" min="1" max="100"></div>
+          <div></div>
+        </div>
+        <p class="hint">画像として開く URL の読み替え規則: <code id="imgRules"></code>（LiveFake の ImageViewURLReplace.txt と同じ書式）</p>
+        <div class="saved" id="imgSaved"></div>
+      </div>
+      <div class="card">
         <p class="hint">設定・ログ・WebView2 の作業データは、すべてデータフォルダに保存されます（AppData・レジストリは使いません）。</p>
         <p class="hint">TchViewer のライセンスは同梱の LICENSE（MIT License）、使用しているライブラリのライセンスは THIRD_PARTY_LICENSES.txt を参照してください。</p>
       </div>
     </section>
   </main>
 </div>
+<div id="menu" class="menu" hidden></div>
+<div id="popup" class="popup" hidden></div>
 <div id="toast" class="toast" role="status"></div>
+<script src="common.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

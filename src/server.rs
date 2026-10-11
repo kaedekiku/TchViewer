@@ -57,7 +57,10 @@ async fn events(
     let hist = app.recent(n);
     let past = futures_util::stream::iter(hist.into_iter().map(|d| Ok(Event::default().data(d))));
     let live = BroadcastStream::new(rx).filter_map(|r| async move { r.ok().map(|d| Ok(Event::default().data(d))) });
-    Sse::new(past.chain(live)).keep_alive(KeepAlive::default())
+    // ?ui=1: アプリ画面だけに流すメッセージも含める（デバッグ版でアプリ画面をブラウザから確かめる用）
+    let ui = if q.get("ui").is_some_and(|v| v == "1") { Some(app.ui_tx.subscribe()) } else { None };
+    let ui_live = futures_util::stream::iter(ui).flat_map(|rx| BroadcastStream::new(rx).filter_map(|r| async move { r.ok().map(|d| Ok(Event::default().data(d))) }));
+    Sse::new(past.chain(futures_util::stream::select(live, ui_live))).keep_alive(KeepAlive::default())
 }
 
 /// ?layout=名前 のレイアウト名（無い・使えない名前なら「標準」）

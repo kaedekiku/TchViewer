@@ -17,8 +17,19 @@ pub struct Config {
     pub poll_seconds: u64,
     /// 接続時に既存レスを末尾から何件表示するか（読み上げはしない）
     pub initial_posts: usize,
-    /// 5ch / したらば / JPNKN の本文に対するワードNG（`/…/` は正規表現）
+    /// 旧形式のワードNG。読み込み時に ng.words へ引き継ぐ
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ng_words: Vec<String>,
+    /// NG（ワード / 名前 / ID。LiveFake と同じ考え方）
+    pub ng: NgConfig,
+    /// TchViewer のホワイトリストの設定（自動追加など）
+    pub whitelist: WhitelistOptions,
+    /// スレタブで開いているスレ（並び順どおり）
+    pub open_tabs: Vec<String>,
+    /// ビュワーの下に「番号だけ読んだレス」の欄を出す
+    pub unlisted_panel: bool,
+    /// 画像ウィンドウ
+    pub image: ImageOptions,
     /// LiveFake の data フォルダ、または broadcast-whitelist.json そのもののパス
     pub whitelist_path: String,
     /// アプリ画面のテーマ: "system"（Windows に合わせる）/ "light" / "dark"
@@ -37,6 +48,11 @@ impl Default for Config {
             poll_seconds: 15,
             initial_posts: 0,
             ng_words: vec![],
+            ng: NgConfig::default(),
+            whitelist: WhitelistOptions::default(),
+            open_tabs: vec![],
+            unlisted_panel: true,
+            image: ImageOptions::default(),
             whitelist_path: String::new(),
             ui_theme: "system".into(),
             speech: SpeechConfig::default(),
@@ -48,6 +64,65 @@ impl Default for Config {
 impl Config {
     pub fn poll_interval(&self) -> std::time::Duration {
         std::time::Duration::from_secs(self.poll_seconds.clamp(10, 300))
+    }
+}
+
+/// NG の1件
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct NgEntry {
+    /// 対象の文字（`/…/` で囲むと正規表現。ID は完全一致）
+    pub value: String,
+    /// "abone"（スレタブで「あぼーん」と表示）/ "hide"（スレタブでも出さない）。どちらも OBS には出さず読み上げない
+    pub mode: String,
+    /// "global"（全体）/ "thread"（このスレだけ）
+    pub scope: String,
+    /// scope = "thread" のときのスレ（read.cgi の URL）
+    pub scope_url: String,
+}
+
+impl Default for NgEntry {
+    fn default() -> Self {
+        Self { value: String::new(), mode: "abone".into(), scope: "global".into(), scope_url: String::new() }
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct NgConfig {
+    pub words: Vec<NgEntry>,
+    pub names: Vec<NgEntry>,
+    pub ids: Vec<NgEntry>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct WhitelistOptions {
+    /// 【試験的】登録ワードを含むレスの ID を自動でホワイトリストに入れる
+    pub auto_enabled: bool,
+    pub auto_words: Vec<String>,
+    /// 1日に自動で入れる上限（既定 20、最大 100）
+    pub auto_limit: u32,
+}
+
+impl Default for WhitelistOptions {
+    fn default() -> Self {
+        Self { auto_enabled: false, auto_words: vec![], auto_limit: 20 }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ImageOptions {
+    /// 画像の保存先（空なら初回保存時に選ぶ）
+    pub save_dir: String,
+    /// 取得する画像の上限（MB。既定 20、最大 100）
+    pub max_mb: u32,
+}
+
+impl Default for ImageOptions {
+    fn default() -> Self {
+        Self { save_dir: String::new(), max_mb: 20 }
     }
 }
 
@@ -187,6 +262,8 @@ pub struct SpeechConfig {
     pub sources: HashMap<String, bool>,
     /// Twitchは「名前さん 本文」と読む
     pub twitch_name: bool,
+    /// 監視中のスレで、ホワイトリストに無い ID のレスの読み方: "number"（番号だけ）/ "chime"（通知音）/ "full"（全文）/ "none"
+    pub unlisted_mode: String,
     pub sapi: SapiConfig,
     pub voicevox: VoicevoxConfig,
 }
@@ -242,6 +319,7 @@ impl Default for SpeechConfig {
             max_length: 0,
             sources: ["twitch", "5ch", "shitaraba", "jpnkn"].iter().map(|s| (s.to_string(), true)).collect(),
             twitch_name: true,
+            unlisted_mode: "number".into(),
             sapi: SapiConfig::default(),
             voicevox: VoicevoxConfig::default(),
         }
@@ -267,10 +345,21 @@ fn config_path() -> PathBuf {
 }
 
 pub fn load() -> Config {
-    std::fs::read_to_string(config_path())
+    let mut cfg: Config = std::fs::read_to_string(config_path())
         .ok()
         .and_then(|s| serde_json::from_str(s.trim_start_matches('\u{feff}')).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // 旧形式のワードNGを、新しい NG（全体・通常あぼーん）へ引き継ぐ
+    if !cfg.ng_words.is_empty() {
+        for w in std::mem::take(&mut cfg.ng_words) {
+            if !cfg.ng.words.iter().any(|e| e.value == w) {
+                cfg.ng.words.push(NgEntry { value: w, ..Default::default() });
+            }
+        }
+    }
+    cfg.whitelist.auto_limit = cfg.whitelist.auto_limit.clamp(1, 100);
+    cfg.image.max_mb = cfg.image.max_mb.clamp(1, 100);
+    cfg
 }
 
 /// 一時ファイルに書いてから置き換える（書き込み途中で落ちても設定が壊れないように）
