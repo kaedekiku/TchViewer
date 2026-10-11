@@ -2,8 +2,8 @@
 //!
 //! 読み上げ文の作り方は LiveFakeTauri2 (App.tsx ttsSpeak) に準拠:
 //!   サイト別の前置き「レスN番さん / したらばN番さん / ジャパンくんN番さん」、
-//!   URLは読まない（YouTubeは「ユーチューブ」）、1001以降のシステムレスは読まない、
-//!   長文は「、長文のため以下省略」
+//!   URLは読まない（掲示板の YouTube は「ユーチューブ」、Twitch のチャットは「URL省略」）、1001以降のシステムレスは読まない、
+//!   長文は「、以下省略」
 
 use crate::config::{SpeechConfig, VoicevoxConfig};
 use crate::Comment;
@@ -102,8 +102,14 @@ pub fn speech_text(c: &Comment, sp: &SpeechConfig) -> String {
                 .min();
             match url_at {
                 Some(i) => {
-                    let reading = if lower[i..].contains("youtu") { " ユーチューブ" } else { "" };
-                    format!("{}{}", &w[..i], reading)
+                    let reading = if c.source == "twitch" {
+                        " URL省略"
+                    } else if lower[i..].contains("youtu") {
+                        " ユーチューブ"
+                    } else {
+                        ""
+                    };
+                    format!("{}{}", &w[..i], reading).trim().to_string()
                 }
                 None => w.to_string(),
             }
@@ -115,7 +121,7 @@ pub fn speech_text(c: &Comment, sp: &SpeechConfig) -> String {
         return String::new();
     }
     if sp.max_length > 0 && body.chars().count() > sp.max_length {
-        body = body.chars().take(sp.max_length).collect::<String>() + "、長文のため以下省略";
+        body = body.chars().take(sp.max_length).collect::<String>() + "、以下省略";
     }
     let prefix = match (c.source.as_str(), c.no) {
         ("twitch", _) if sp.twitch_name => format!("{}さん", c.name),
@@ -270,6 +276,23 @@ mod tests {
             emotes: emotes.iter().map(|&(id, start, end)| crate::Emote { id: id.into(), start, end }).collect(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn urls_and_long_text() {
+        let sp = SpeechConfig { twitch_name: false, ..Default::default() };
+        // Twitch のチャットの URL は「URL省略」
+        let c = Comment { source: "twitch".into(), text: "見て https://example.com/a これ".into(), ..Default::default() };
+        assert_eq!(speech_text(&c, &sp), "見て URL省略 これ");
+        let c = Comment { source: "twitch".into(), text: "https://youtu.be/x".into(), ..Default::default() };
+        assert_eq!(speech_text(&c, &sp), "URL省略");
+        // 掲示板は今までどおり（読まない、YouTube は「ユーチューブ」）
+        let c = Comment { source: "5ch".into(), text: "見て https://example.com/a これ ttps://youtu.be/x".into(), ..Default::default() };
+        assert_eq!(speech_text(&c, &sp), "見て これ ユーチューブ");
+        // 長文
+        let short = SpeechConfig { max_length: 3, ..sp.clone() };
+        let c = Comment { source: "twitch".into(), text: "あいうえお".into(), ..Default::default() };
+        assert_eq!(speech_text(&c, &short), "あいう、以下省略");
     }
 
     #[test]
