@@ -8,6 +8,36 @@ let stats = [];     // 取得元ごとの状況（2秒ごとに更新）
 
 // ============================================================ ページ切り替え
 for (const b of document.querySelectorAll('.side button')) b.addEventListener('click', () => showPage(b.dataset.page));
+// ---- マスク（設定ページの登録スレ・NG・ID・パスなどを「＊＊＊」で隠す。オン・オフは保存して次回も同じにする。設定が読めるまではオン）
+const MASK_PAGES = ['connect', 'events', 'whitelist', 'ng', 'speech', 'look', 'status', 'info'];
+const isMasked = (name) => $(`page-${name}`)?.classList.contains('masked');
+// 今見ているページがマスク中なら、お知らせなどに出す値も伏せる
+const secret = (v) => (document.querySelector('.page.active.masked') ? '＊＊＊' : v);
+function setMask(name, on, init, save) {
+  const page = $(`page-${name}`);
+  page.classList.toggle('masked', on);
+  const b = page.querySelector('.maskbtn');
+  b.textContent = on ? 'マスク中' : 'マスクする';
+  b.title = on ? '押すと中身を表示します' : '押すと登録スレ・NG・ID などを＊＊＊で隠します';
+  // マスク中に隠していたツールチップを戻す
+  if (!on) for (const n of page.querySelectorAll('[data-mtitle]')) { n.title = n.dataset.mtitle; delete n.dataset.mtitle; }
+  if (name === 'ng' && !init) renderNg();
+  if (save) safe(() => api('save_mask', { page: name, on })).catch(() => {});
+}
+for (const name of MASK_PAGES) {
+  const b = button('', 'mini maskbtn', () => setMask(name, !isMasked(name), false, true));
+  $(`page-${name}`).querySelector('h1').append(b);
+  setMask(name, true, true);
+}
+// マスク中のページでは、URL などが入ったツールチップを出さない
+document.addEventListener('mouseover', (e) => {
+  const page = e.target.closest?.('.page.masked');
+  if (!page) return;
+  for (let n = e.target; n && n !== page; n = n.parentElement) {
+    if (n.title && !n.classList.contains('maskbtn')) { n.dataset.mtitle = n.title; n.removeAttribute('title'); }
+  }
+}, true);
+
 function showPage(name) {
   for (const b of document.querySelectorAll('.side button')) b.classList.toggle('active', b.dataset.page === name);
   for (const p of document.querySelectorAll('.page')) p.classList.toggle('active', p.id === `page-${name}`);
@@ -196,11 +226,11 @@ $('uClear').addEventListener('click', () => { $('uList').replaceChildren(); uRow
 
 async function addWhitelist(id) {
   await safe(() => api('whitelist_add', { id }));
-  toast(`ID:${id} をホワイトリストに入れました`, ['取り消す', () => removeWhitelist(id)]);
+  toast(`ID:${secret(id)} をホワイトリストに入れました`, ['取り消す', () => removeWhitelist(id)]);
 }
 async function removeWhitelist(id) {
   await safe(() => api('whitelist_remove', { id }));
-  toast(`ID:${id} をホワイトリストから外しました`);
+  toast(`ID:${secret(id)} をホワイトリストから外しました`);
 }
 
 // ============================================================ スレ（スレタブ）
@@ -217,6 +247,22 @@ async function loadTabs(select) {
   if (activeKey) await activateTab(activeKey);
   else { $('tList').replaceChildren(); $('tHead').hidden = true; $('tEmpty').hidden = false; }
 }
+
+// タブの幅: 全部が1段に収まるなら最大220pxまで広げ、収まらなければ縮める。最小110pxでも収まらなければ、同じ幅のまま次の段へ折り返す
+const TAB_MAX = 220, TAB_MIN = 110, TAB_GAP = 2;
+function fitTabs() {
+  const box = $('tTabs');
+  const n = box.children.length;
+  const w = box.clientWidth;
+  if (!n || !w) return;
+  let per = (w - TAB_GAP * (n - 1)) / n;
+  if (per < TAB_MIN) {
+    const cols = Math.max(1, Math.floor((w + TAB_GAP) / (TAB_MIN + TAB_GAP)));
+    per = (w - TAB_GAP * (cols - 1)) / cols;
+  }
+  box.style.setProperty('--tabw', `${Math.floor(Math.min(TAB_MAX, per))}px`);
+}
+new ResizeObserver(fitTabs).observe($('tTabs'));
 
 let dragTab = null;
 function renderTabs() {
@@ -245,6 +291,7 @@ function renderTabs() {
     tab.addEventListener('dragend', () => { dragTab = null; });
     return tab;
   }));
+  fitTabs();
 }
 
 async function openThread(url, scrollNo) {
@@ -539,7 +586,7 @@ async function addNg(kind, value, mode, scope, scopeUrl) {
   ng[kind].push({ value, mode, scope, scopeUrl: scope === 'thread' ? scopeUrl : '' });
   await saveNg(ng);
   const label = { words: 'ワード', names: '名前', ids: 'ID' }[kind];
-  toast(`NG${label}に追加しました: ${value.length > 20 ? `${value.slice(0, 20)}…` : value}`);
+  toast(`NG${label}に追加しました: ${secret(value.length > 20 ? `${value.slice(0, 20)}…` : value)}`);
 }
 async function saveNg(ng) {
   await safe(() => api('save_ng', { ng }));
@@ -571,7 +618,7 @@ function renderNg() {
   const sel = $('ngScope');
   const keep = sel.value;
   const urls = [...new Set([...(current.threads || []), ...tabs.map((t) => t.url)])];
-  const opts = [['global', '全体']].concat(urls.map((u) => [u, `このスレだけ: ${threadLabel(u)}`]));
+  const opts = [['global', '全体']].concat(urls.map((u, i) => [u, isMasked('ng') ? `このスレだけ: ＊＊＊（${i + 1}）` : `このスレだけ: ${threadLabel(u)}`]));
   sel.replaceChildren(...opts.map(([v, t]) => { const o = el('option', '', t); o.value = v; return o; }));
   if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
 }
@@ -783,15 +830,27 @@ function fillSpeech(sp) {
   for (const inp of document.querySelectorAll('[data-s]')) {
     const ks = splitS(inp.dataset.s);
     const v = ks.length === 1 ? sp[ks[0]] : sp[ks[0]]?.[ks[1]];
-    if (inp.type === 'checkbox') inp.checked = !!v; else inp.value = v ?? '';
+    // data-invert: 「棒読みちゃんの設定」のように、チェックが入っている＝値を使わない
+    if (inp.type === 'checkbox') inp.checked = inp.dataset.invert ? !v : !!v; else inp.value = v ?? '';
   }
   $('speech').dataset.engine = sp.engine || 'bouyomi';
+  syncBouyomiParams();
+}
+// 棒読みちゃんの速度などの数値表示と、「棒読みちゃんの設定」のときはスライダーを使えなくする
+function syncBouyomiParams() {
+  for (const out of document.querySelectorAll('.byparams output')) {
+    const range = document.querySelector(`[data-s="${out.dataset.for}"]`);
+    const key = out.dataset.for.split('.')[1];
+    const use = document.querySelector(`[data-s="bouyomi.set${key[0].toUpperCase()}${key.slice(1)}"]`);
+    range.disabled = use.checked;
+    out.textContent = use.checked ? '—' : range.value;
+  }
 }
 function readSpeech() {
   const sp = structuredClone(current.speech || {});
   for (const inp of document.querySelectorAll('[data-s]')) {
     const ks = splitS(inp.dataset.s);
-    const v = inp.type === 'checkbox' ? inp.checked : (inp.type === 'number' || inp.dataset.num) ? Number(inp.value) : inp.value.trim();
+    const v = inp.type === 'checkbox' ? (inp.dataset.invert ? !inp.checked : inp.checked) : (inp.type === 'number' || inp.dataset.num) ? Number(inp.value) : inp.value.trim();
     if (ks.length === 1) sp[ks[0]] = v; else (sp[ks[0]] ??= {})[ks[1]] = v;
   }
   return sp;
@@ -807,8 +866,12 @@ function queueSpeechSave() {
     flashSaved('spSaved');
   }), 300);
 }
-$('speech').addEventListener('input', (e) => { if (e.target.dataset.s) queueSpeechSave(); });
-$('speech').addEventListener('change', (e) => { if (e.target.dataset.s) queueSpeechSave(); });
+$('speech').addEventListener('input', (e) => { if (e.target.dataset.s) { syncBouyomiParams(); queueSpeechSave(); } });
+$('speech').addEventListener('change', (e) => {
+  // 同じスタンプを読む数は 1〜100 の整数
+  if (e.target.dataset.s === 'emoteMax') e.target.value = Math.min(100, Math.max(1, Math.round(Number(e.target.value)) || 3));
+  if (e.target.dataset.s) queueSpeechSave();
+});
 async function loadSapiVoices(quiet) {
   const { voices } = await api('sapi_voices');
   setOptions($('sapiVoice'), [['', 'Windows の既定の声'], ...voices.map((v) => [v.id, v.name])], readSpeech().sapi?.voice ?? '');
@@ -1063,6 +1126,7 @@ function onMessage(m) {
   current = await api('get_config');
   $('uiTheme').value = current.uiTheme || 'system';
   applyTheme($('uiTheme').value);
+  for (const name of MASK_PAGES) setMask(name, current.masks?.[name] !== false, true);
   $('vPanel').checked = current.unlistedPanel !== false;
   $('uPanel').hidden = !$('vPanel').checked;
   $('cPoll').value = current.pollSeconds;

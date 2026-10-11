@@ -32,6 +32,8 @@ pub struct Config {
     pub tab_poll_seconds: u64,
     /// ビュワーの下に「番号だけ読んだレス」の欄を出す
     pub unlisted_panel: bool,
+    /// 設定ページごとのマスク（false=外している。無いページはマスクする）
+    pub masks: HashMap<String, bool>,
     /// 画像ウィンドウ
     pub image: ImageOptions,
     /// Twitch のイベントの種類ごとの設定（流す・読む・読み上げる文）
@@ -60,6 +62,7 @@ impl Default for Config {
             tab_auto: true,
             tab_poll_seconds: 15,
             unlisted_panel: true,
+            masks: HashMap::new(),
             image: ImageOptions::default(),
             twitch_events: crate::events::default_settings(),
             whitelist_path: String::new(),
@@ -271,13 +274,50 @@ pub struct SpeechConfig {
     pub port: u16,
     /// 本文の最大読み上げ文字数（0=無制限）
     pub max_length: usize,
+    /// Twitch のスタンプ: "send"（スタンプ名をそのまま送る。棒読みちゃんの教育で読み替えられる）/ "none"（読まない）
+    pub emote_mode: String,
+    /// 1件のコメントで、同じスタンプを何個まで読むか（1〜100）
+    pub emote_max: u32,
     pub sources: HashMap<String, bool>,
     /// Twitchは「名前さん 本文」と読む
     pub twitch_name: bool,
     /// 監視中のスレで、ホワイトリストに無い ID のレスの読み方: "number"（番号だけ）/ "chime"（通知音）/ "full"（全文）/ "none"
     pub unlisted_mode: String,
+    pub bouyomi: BouyomiConfig,
     pub sapi: SapiConfig,
     pub voicevox: VoicevoxConfig,
+}
+
+/// 棒読みちゃんへ送る速度・音程・音量・声質。set_* が false の項目は棒読みちゃん側の設定で読む
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BouyomiConfig {
+    pub set_speed: bool,
+    /// 速度 50〜300（100=普通）
+    pub speed: i32,
+    pub set_tone: bool,
+    /// 音程 50〜200（100=普通）
+    pub tone: i32,
+    pub set_volume: bool,
+    /// 音量 0〜100
+    pub volume: i32,
+    /// 声質 0=棒読みちゃんの既定 / 1〜8=内蔵の声 / 10001〜=SAPI5 の声
+    pub voice: i32,
+}
+
+impl Default for BouyomiConfig {
+    fn default() -> Self {
+        Self { set_speed: false, speed: 100, set_tone: false, tone: 100, set_volume: false, volume: 100, voice: 0 }
+    }
+}
+
+impl BouyomiConfig {
+    /// 送る値（速度・音程・音量・声質）。-1 は棒読みちゃん側の設定。範囲外の値は範囲内に収める
+    pub fn params(&self) -> [i16; 4] {
+        let pick = |on: bool, v: i32, lo: i32, hi: i32| if on { v.clamp(lo, hi) as i16 } else { -1 };
+        let voice = if (0..=8).contains(&self.voice) || (10001..=19999).contains(&self.voice) { self.voice as i16 } else { 0 };
+        [pick(self.set_speed, self.speed, 50, 300), pick(self.set_tone, self.tone, 50, 200), pick(self.set_volume, self.volume, 0, 100), voice]
+    }
 }
 
 /// SAPI（Windows 標準の音声合成）
@@ -329,9 +369,12 @@ impl Default for SpeechConfig {
             host: "127.0.0.1".into(),
             port: 50001,
             max_length: 0,
+            emote_mode: "send".into(),
+            emote_max: 3,
             sources: ["twitch", "5ch", "shitaraba", "jpnkn"].iter().map(|s| (s.to_string(), true)).collect(),
             twitch_name: true,
             unlisted_mode: "number".into(),
+            bouyomi: BouyomiConfig::default(),
             sapi: SapiConfig::default(),
             voicevox: VoicevoxConfig::default(),
         }

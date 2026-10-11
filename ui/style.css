@@ -109,11 +109,13 @@ dl.kv dt { color: var(--muted); font-size: 12px; } dl.kv dd { margin: 0; word-br
 /* ---- スレタブ */
 .urlbar { display: flex; gap: 8px; }
 .urlbar input { flex: 1; }
-.tabs { display: flex; gap: 2px; margin-top: 8px; overflow-x: auto; border-bottom: 1px solid var(--line); flex: none; }
-.tab { display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 5px 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--side); cursor: pointer; font-size: 12px; user-select: none; }
+/* タブは画面の幅に合わせて縮め（最大220px・最小110px）、それでも収まらなければ次の段へ折り返す */
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 8px; border-bottom: 1px solid var(--line); flex: none; max-height: 40vh; overflow-y: auto; }
+.tab { display: flex; align-items: center; gap: 6px; flex: 0 0 var(--tabw, 220px); min-width: 0; box-sizing: border-box; padding: 5px 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--side); cursor: pointer; font-size: 12px; user-select: none; }
 .tab.active { background: var(--panel); font-weight: 700; }
 .tab.dragover { outline: 2px dashed var(--accent); }
-.tab .ttl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .ttl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .site, .tab .x { flex: none; }
 .tab .mon { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
 .tab .x { border: 0; background: transparent; color: var(--muted); padding: 0 2px; font-size: 13px; }
 .thead { display: flex; align-items: center; gap: 6px; padding: 6px 0; flex-wrap: wrap; }
@@ -204,6 +206,11 @@ table.stats td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .popup[hidden] { display: none; }
 .toast { position: fixed; right: 16px; bottom: 16px; background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
 .toast.show { opacity: .92; }
+.byparams { display: grid; grid-template-columns: auto minmax(120px, 1fr) 3em auto; gap: 6px 10px; align-items: center; margin: 8px 0; }
+.byparams > label:not(.inline) { margin: 0; }
+.byparams output { font-variant-numeric: tabular-nums; text-align: right; }
+.byparams input[type=range]:disabled { opacity: .4; }
+@media (max-width: 560px) { .byparams { grid-template-columns: 1fr 3em; } .byparams > label { grid-column: 1 / -1; } }
 .toast.act.show { pointer-events: auto; display: flex; align-items: center; gap: 10px; }
 .toast button.mini { color: var(--bg); border-color: var(--bg); }
 .urlbar .tpoll { flex: none; width: 4.5em; }
@@ -212,3 +219,83 @@ table.stats td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .uitem .wlmark { font-size: 11px; color: #fff; background: var(--ok); border-radius: 4px; padding: 0 5px; white-space: nowrap; }
 .post button.wlbtn { padding: 0 6px; font-size: 11px; line-height: 1.5; }
 .post button.wlbtn.on { color: #fff; background: var(--ok); border-color: var(--ok); }
+
+/* ---- マスク（配信に映ったときのため。各設定ページの見出しのボタンで切り替え、起動時は必ずオン） */
+.maskbtn { margin-left: 10px; vertical-align: middle; font-size: 12px; font-weight: 400; }
+.page.masked .maskbtn { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.page.masked #cTwList .ch > span:not(.lamp),
+.page.masked #cThList .ttl,
+.page.masked #cThList .sub .off,
+.page.masked #cThMsg:not(:empty),
+.page.masked #twAuthState,
+.page.masked #twCode,
+.page.masked #wlOwn .id,
+.page.masked #wlRemoved .id,
+.page.masked #wlOwn .src.auto,
+.page.masked #wlIds span,
+.page.masked #wlState,
+.page.masked #ngWords .val,
+.page.masked #ngNames .val,
+.page.masked #ngIds .val,
+.page.masked .ngrow .scope,
+.page.masked #lyCssPath,
+.page.masked #statsBody td:first-child,
+.page.masked #statsBody .sub-line,
+.page.masked #log,
+.page.masked #infoData,
+.page.masked #infoUrl,
+.page.masked #imgRules { font-size: 0 !important; letter-spacing: 0 !important; }
+.page.masked #cTwList .ch > span:not(.lamp) *,
+.page.masked #cThList .ttl *,
+.page.masked #cThList .sub .off *,
+.page.masked #cThMsg:not(:empty) *,
+.page.masked #twAuthState *,
+.page.masked #twCode *,
+.page.masked #wlOwn .id *,
+.page.masked #wlRemoved .id *,
+.page.masked #wlOwn .src.auto *,
+.page.masked #wlIds span *,
+.page.masked #wlState *,
+.page.masked #ngWords .val *,
+.page.masked #ngNames .val *,
+.page.masked #ngIds .val *,
+.page.masked .ngrow .scope *,
+.page.masked #lyCssPath *,
+.page.masked #statsBody td:first-child *,
+.page.masked #statsBody .sub-line *,
+.page.masked #log *,
+.page.masked #infoData *,
+.page.masked #infoUrl *,
+.page.masked #imgRules * { display: none !important; }
+.page.masked #cTwList .ch > span:not(.lamp)::before,
+.page.masked #cThList .ttl::before,
+.page.masked #cThList .sub .off::before,
+.page.masked #cThMsg:not(:empty)::before,
+.page.masked #twAuthState::before,
+.page.masked #twCode::before,
+.page.masked #wlOwn .id::before,
+.page.masked #wlRemoved .id::before,
+.page.masked #wlOwn .src.auto::before,
+.page.masked #wlIds span::before,
+.page.masked #wlState::before,
+.page.masked #ngWords .val::before,
+.page.masked #ngNames .val::before,
+.page.masked #ngIds .val::before,
+.page.masked .ngrow .scope::before,
+.page.masked #lyCssPath::before,
+.page.masked #statsBody td:first-child::before,
+.page.masked #statsBody .sub-line::before,
+.page.masked #log::before,
+.page.masked #infoData::before,
+.page.masked #infoUrl::before,
+.page.masked #imgRules::before { content: '＊＊＊'; font-size: 13px; color: var(--muted); font-family: inherit; letter-spacing: 0; }
+.page.masked #cTwInput,
+.page.masked #cThInput,
+.page.masked #wlAddInput,
+.page.masked #wlAutoWords,
+.page.masked #wlPath,
+.page.masked #ngValue,
+.page.masked [data-s="host"],
+.page.masked [data-s="voicevox.endpoint"],
+.page.masked #ovUrl,
+.page.masked #imgDir { -webkit-text-security: disc; }

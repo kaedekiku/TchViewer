@@ -70,11 +70,22 @@ pub fn chime_wav() -> Vec<u8> {
 pub fn speech_text(c: &Comment, sp: &SpeechConfig) -> String {
     let mut body = c.text.clone();
     if c.source == "twitch" && !c.emotes.is_empty() {
-        // エモートは読まない（位置はコードポイント単位）
-        let mut cps: Vec<char> = body.chars().collect();
+        // スタンプは名前のまま送る（棒読みちゃんの教育で読み替えられる）。同じスタンプは emote_max 個まで。
+        // 「読まない」なら全部取り除く（位置はコードポイント単位）
+        let limit = if sp.emote_mode == "none" { 0 } else { sp.emote_max.clamp(1, 100) as usize };
         let mut emotes = c.emotes.clone();
-        emotes.sort_by_key(|e| std::cmp::Reverse(e.start));
+        emotes.sort_by_key(|e| e.start);
+        let mut seen: std::collections::HashMap<String, usize> = Default::default();
+        let mut drop = vec![];
         for e in emotes {
+            let n = seen.entry(e.id.clone()).or_default();
+            *n += 1;
+            if *n > limit {
+                drop.push(e);
+            }
+        }
+        let mut cps: Vec<char> = body.chars().collect();
+        for e in drop.iter().rev() {
             if e.start <= e.end && e.end < cps.len() {
                 cps.drain(e.start..=e.end);
             }
@@ -148,10 +159,25 @@ pub async fn speak(sp: &SpeechConfig, client: &reqwest::Client, text: &str) -> R
             let wav = voicevox_synthesize(client, &sp.voicevox, text).await.map_err(|e| format!("VOICEVOX（{}）: {e}", sp.voicevox.endpoint))?;
             tokio::task::spawn_blocking(move || crate::tts_win::play_wav(&wav)).await.map_err(|e| e.to_string())?
         }
-        _ => send_bouyomi(&sp.host, sp.port, text)
+        _ => send_bouyomi(&sp.host, sp.port, text, sp.bouyomi.params())
             .await
             .map_err(|e| format!("棒読みちゃんに接続できません（{}:{}）: {e}", sp.host, sp.port)),
     }
+}
+
+/// 棒読みちゃんの読み上げの命令
+/// コマンド0x0001(読み上げ) / 速度・音程・音量（-1=棒読みちゃん側の設定）/ 声質（0=既定）/ 文字コード0=UTF-8 / 長さ / 本文
+fn bouyomi_packet(text: &str, params: [i16; 4]) -> Vec<u8> {
+    let body = text.as_bytes();
+    let mut packet = Vec::with_capacity(15 + body.len());
+    packet.extend_from_slice(&1i16.to_le_bytes());
+    for v in params {
+        packet.extend_from_slice(&v.to_le_bytes());
+    }
+    packet.push(0u8);
+    packet.extend_from_slice(&(body.len() as i32).to_le_bytes());
+    packet.extend_from_slice(body);
+    packet
 }
 
 /// VOICEVOX の http://127.0.0.1:50021 のような、ローカルの http アドレスだけを受け付ける
@@ -222,21 +248,70 @@ async fn voicevox_synthesize(client: &reqwest::Client, vv: &VoicevoxConfig, text
     Ok(res.bytes().await.map_err(|e| e.to_string())?.to_vec())
 }
 
-pub async fn send_bouyomi(host: &str, port: u16, text: &str) -> std::io::Result<()> {
-    // コマンド0x0001(読み上げ) / 速度・音程・音量 -1=棒読みちゃん側の設定 / 声質0=既定 / 文字コード0=UTF-8
-    let body = text.as_bytes();
-    let mut packet = Vec::with_capacity(15 + body.len());
-    packet.extend_from_slice(&1i16.to_le_bytes());
-    packet.extend_from_slice(&(-1i16).to_le_bytes());
-    packet.extend_from_slice(&(-1i16).to_le_bytes());
-    packet.extend_from_slice(&(-1i16).to_le_bytes());
-    packet.extend_from_slice(&0i16.to_le_bytes());
-    packet.push(0u8);
-    packet.extend_from_slice(&(body.len() as i32).to_le_bytes());
-    packet.extend_from_slice(body);
+pub async fn send_bouyomi(host: &str, port: u16, text: &str, params: [i16; 4]) -> std::io::Result<()> {
+    let packet = bouyomi_packet(text, params);
     let mut sock = tokio::time::timeout(Duration::from_secs(3), TcpStream::connect((host, port)))
         .await
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"))??;
     sock.write_all(&packet).await?;
     sock.shutdown().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::BouyomiConfig;
+
+    fn emote_comment(text: &str, emotes: &[(&str, usize, usize)]) -> Comment {
+        Comment {
+            source: "twitch".into(),
+            name: "a".into(),
+            text: text.into(),
+            emotes: emotes.iter().map(|&(id, start, end)| crate::Emote { id: id.into(), start, end }).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn emotes_sent_and_limited() {
+        let sp = SpeechConfig { twitch_name: false, ..Default::default() };
+        // 既定: スタンプ名をそのまま送る（同じスタンプは3個まで）
+        let c = emote_comment("こんにちは kaede1Hi", &[("1", 6, 13)]);
+        assert_eq!(speech_text(&c, &sp), "こんにちは kaede1Hi");
+        let c = emote_comment("Kappa Kappa Kappa Kappa LUL", &[("25", 0, 4), ("25", 6, 10), ("25", 12, 16), ("25", 18, 22), ("9", 24, 26)]);
+        assert_eq!(speech_text(&c, &sp), "Kappa Kappa Kappa LUL");
+        let one = SpeechConfig { emote_max: 1, ..sp.clone() };
+        assert_eq!(speech_text(&c, &one), "Kappa LUL");
+        // 範囲外の値は 1〜100 に収める
+        let zero = SpeechConfig { emote_max: 0, ..sp.clone() };
+        assert_eq!(speech_text(&c, &zero), "Kappa LUL");
+        // 読まない
+        let none = SpeechConfig { emote_mode: "none".into(), ..sp.clone() };
+        assert_eq!(speech_text(&c, &none), "");
+        // スタンプだけのコメントも名前つきで読む
+        let named = SpeechConfig { twitch_name: true, ..Default::default() };
+        let c = emote_comment("kaede1Hi", &[("1", 0, 7)]);
+        assert_eq!(speech_text(&c, &named), "aさん kaede1Hi");
+    }
+
+    #[test]
+    fn bouyomi_params() {
+        // 既定は棒読みちゃん側の設定（-1）と既定の声（0）
+        assert_eq!(BouyomiConfig::default().params(), [-1, -1, -1, 0]);
+        let c = BouyomiConfig { set_speed: true, speed: 999, set_tone: true, tone: 10, set_volume: true, volume: 50, voice: 3 };
+        assert_eq!(c.params(), [300, 50, 50, 3]);
+        let c = BouyomiConfig { voice: 9, ..Default::default() };
+        assert_eq!(c.params()[3], 0);
+        let c = BouyomiConfig { voice: 10002, ..Default::default() };
+        assert_eq!(c.params()[3], 10002);
+    }
+
+    #[test]
+    fn bouyomi_packet_layout() {
+        let p = bouyomi_packet("あ", [120, -1, 80, 2]);
+        assert_eq!(&p[..10], &[1, 0, 120, 0, 0xff, 0xff, 80, 0, 2, 0]);
+        assert_eq!(p[10], 0);
+        assert_eq!(&p[11..15], &3i32.to_le_bytes());
+        assert_eq!(&p[15..], "あ".as_bytes());
+    }
 }

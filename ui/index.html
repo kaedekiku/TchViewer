@@ -74,7 +74,7 @@
     </section>
 
     <!-- ================================================= 接続 -->
-    <section class="page" id="page-connect">
+    <section class="page masked" id="page-connect">
       <h1>接続</h1>
       <div class="card">
         <h2>Twitch チャンネル</h2>
@@ -105,7 +105,7 @@
     </section>
 
     <!-- ================================================= Twitch イベント -->
-    <section class="page" id="page-events">
+    <section class="page masked" id="page-events">
       <h1>Twitch イベント</h1>
       <p class="hint">サブスク・ギフト・ビッツ・レイド・連続視聴・入力つきのチャンネルポイント報酬は、ログインしなくても表示できます。入力の無いチャンネルポイント報酬・自動報酬（メッセージのハイライトなど）・フォローを表示するには、配信者本人の Twitch アカウントでログインしてください。</p>
       <div class="card">
@@ -130,7 +130,7 @@
     </section>
 
     <!-- ================================================= ホワイトリスト -->
-    <section class="page" id="page-whitelist">
+    <section class="page masked" id="page-whitelist">
       <h1>ホワイトリスト</h1>
       <p class="hint">ここに入っている ID（日本時間の今日の分）のレスだけを OBS に表示し、本文まで読み上げます。日付が変わると空になります。</p>
       <div class="card">
@@ -169,7 +169,7 @@
     </section>
 
     <!-- ================================================= NG -->
-    <section class="page" id="page-ng">
+    <section class="page masked" id="page-ng">
       <h1>NG</h1>
       <p class="hint">5ch / したらば / JPNKN が対象です。NG に当たったレスは OBS に出さず、読み上げず、自動ホワイトリストの対象にもしません。ワードと名前は <code>/…/</code> で正規表現（大文字小文字は区別しない）、ID は完全一致です。スレタブで文字を選んで右クリック、またはドラッグしても追加できます。</p>
       <div class="card">
@@ -187,7 +187,7 @@
     </section>
 
     <!-- ================================================= 読み上げ -->
-    <section class="page" id="page-speech">
+    <section class="page masked" id="page-speech">
       <h1>読み上げ</h1>
       <p class="hint">変更はすぐに保存されます。</p>
       <div class="card" id="speech">
@@ -199,11 +199,35 @@
           <option value="voicevox">VOICEVOX</option>
         </select>
         <div class="engine" data-engine="bouyomi">
-          <p class="hint">棒読みちゃんの「その他 → アプリケーション連携」でTCPサーバー（既定 50001）を有効にしてください。声や速さは棒読みちゃん側の設定で読みます。</p>
+          <p class="hint">棒読みちゃんの「その他 → アプリケーション連携」でTCPサーバー（既定 50001）を有効にしてください。「棒読みちゃんの設定」にチェックを入れた項目は、棒読みちゃん側の設定で読みます。</p>
           <div class="row">
             <div><label>ホスト</label><input data-s="host"></div>
             <div><label>ポート</label><input type="number" data-s="port"></div>
           </div>
+          <div class="byparams">
+            <label>速度（50〜300・普通100）</label>
+            <input type="range" min="50" max="300" step="1" data-s="bouyomi.speed" data-num="1"><output data-for="bouyomi.speed"></output>
+            <label class="inline"><input type="checkbox" data-s="bouyomi.setSpeed" data-invert="1"> 棒読みちゃんの設定</label>
+            <label>音程（50〜200・普通100）</label>
+            <input type="range" min="50" max="200" step="1" data-s="bouyomi.tone" data-num="1"><output data-for="bouyomi.tone"></output>
+            <label class="inline"><input type="checkbox" data-s="bouyomi.setTone" data-invert="1"> 棒読みちゃんの設定</label>
+            <label>音量（0〜100）</label>
+            <input type="range" min="0" max="100" step="1" data-s="bouyomi.volume" data-num="1"><output data-for="bouyomi.volume"></output>
+            <label class="inline"><input type="checkbox" data-s="bouyomi.setVolume" data-invert="1"> 棒読みちゃんの設定</label>
+          </div>
+          <label>声質</label>
+          <select data-s="bouyomi.voice" data-num="1">
+            <option value="0">棒読みちゃんの設定</option>
+            <option value="1">女性1</option>
+            <option value="2">女性2</option>
+            <option value="3">男性1</option>
+            <option value="4">男性2</option>
+            <option value="5">中性</option>
+            <option value="6">ロボット</option>
+            <option value="7">機械1</option>
+            <option value="8">機械2</option>
+          </select>
+          <p class="hint">抑揚は棒読みちゃんの仕組み上、TchViewer からは変えられません。「テスト」で今の設定を試せます。</p>
         </div>
         <div class="engine" data-engine="sapi">
           <label>声 <button type="button" class="mini" id="sapiReload">一覧を読み込む</button></label>
@@ -235,6 +259,13 @@
             </select></div>
           <div><label>最大文字数（0=無制限）</label><input type="number" min="0" data-s="maxLength"></div>
         </div>
+        <div class="row">
+          <div><label>Twitch のスタンプ</label><select data-s="emoteMode">
+              <option value="send">スタンプ名をそのまま送る（棒読みちゃんの教育で読み替えられます）</option>
+              <option value="none">読まない</option>
+            </select></div>
+          <div><label>同じスタンプを読む数（1件につき 1〜100個まで）</label><input type="number" min="1" max="100" step="1" data-s="emoteMax"></div>
+        </div>
         <label>読み上げるソース</label>
         <div>
           <label class="inline"><input type="checkbox" data-s="sources.twitch"> Twitch</label>
@@ -249,7 +280,7 @@
     </section>
 
     <!-- ================================================= 表示（OBS） -->
-    <section class="page" id="page-look">
+    <section class="page masked" id="page-look">
       <h1>表示（OBS）</h1>
       <div class="card">
         <label for="lySelect">レイアウト</label>
@@ -345,7 +376,7 @@
     </section>
 
     <!-- ================================================= 状態 -->
-    <section class="page" id="page-status">
+    <section class="page masked" id="page-status">
       <h1>状態</h1>
       <p class="hint">「受信」は監視を始めた後に新しく届いた件数です。掲示板は、ホワイトリストに無い ID で表示しなかった件数（番号だけ読んだ件数）と、NG で除外した件数も表示します。</p>
       <div class="card">
@@ -361,7 +392,7 @@
     </section>
 
     <!-- ================================================= 情報 -->
-    <section class="page" id="page-info">
+    <section class="page masked" id="page-info">
       <h1>情報</h1>
       <div class="card">
         <dl class="kv">

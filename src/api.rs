@@ -127,6 +127,20 @@ pub async fn dispatch(app: &Arc<App>, handle: Option<&tauri::AppHandle>, cmd: &s
             Ok(json!({ "ok": true }))
         }
 
+        // 設定ページのマスクのオン・オフ（次回起動時に戻す）
+        "save_mask" => {
+            let page: String = arg(&args, "page")?;
+            let on: bool = arg(&args, "on")?;
+            const PAGES: [&str; 8] = ["connect", "events", "whitelist", "ng", "speech", "look", "status", "info"];
+            if !PAGES.contains(&page.as_str()) {
+                return Err("不明なページです".into());
+            }
+            app.update_config(|cfg| {
+                cfg.masks.insert(page, on);
+            })?;
+            Ok(json!({ "ok": true }))
+        }
+
         // ---- スレタブ
         "thread_tabs" => {
             let cfg = app.config();
@@ -398,7 +412,8 @@ pub async fn dispatch(app: &Arc<App>, handle: Option<&tauri::AppHandle>, cmd: &s
 
         // ---- 読み上げ（接続はやり直さない）
         "save_speech" => {
-            let sp: SpeechConfig = arg(&args, "speech")?;
+            let mut sp: SpeechConfig = arg(&args, "speech")?;
+            sp.emote_max = sp.emote_max.clamp(1, 100);
             app.update_config(|cfg| cfg.speech = sp)?;
             Ok(json!({ "ok": true }))
         }
