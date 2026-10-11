@@ -20,13 +20,22 @@ function onEvent(cb) {
 }
 
 let toastTimer = 0;
-function toast(text) {
+// action: [ボタンの文字, 押したときの処理]（「取り消す」など。付けたときは少し長く出す）
+function toast(text, action) {
   const t = $('toast');
   if (!t) return;
-  t.textContent = text;
+  t.replaceChildren(text);
+  t.classList.toggle('act', !!action);
+  if (action) {
+    const b = document.createElement('button');
+    b.className = 'mini';
+    b.textContent = action[0];
+    b.addEventListener('click', () => { t.classList.remove('show'); action[1](); });
+    t.append(b);
+  }
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+  toastTimer = setTimeout(() => t.classList.remove('show'), action ? 5000 : 2400);
 }
 function flashSaved(id) {
   const e = $(id);

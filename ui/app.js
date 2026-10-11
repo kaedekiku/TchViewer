@@ -131,32 +131,72 @@ function flushViewer() {
   if ($('vAuto').checked && atBottom) vList.scrollTop = vList.scrollHeight;
 }
 
-// ---- 番号だけ読んだレス
+// ---- スレの最新レス（開いているスレタブに届いたレス ＋ 監視するスレで番号だけ読んだレス）
 const U_MAX = 300;
-function addUnlisted(m) {
+const uRows = new Map(); // "key:no" → 行（同じレスを2回出さない）
+function addLatest(m) {
+  const id = `${m.key}:${m.no}`;
+  const sk = m.speechKey || `u:${m.key}:${m.no}`;
+  const old = uRows.get(id);
+  if (old) {
+    // スレタブ側で先に出ていたレスを番号だけ読んだ → 読み上げ中の印を合わせる
+    old.dataset.sk = sk;
+    if (sk === speakingKey) old.classList.add('speaking');
+    return;
+  }
   const list = $('uList');
   const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 30;
   const it = el('div', 'uitem');
-  it.dataset.sk = m.speechKey;
+  it.dataset.sk = sk;
+  it.dataset.uid = m.uid || '';
+  it._id = id;
   const site = el('span', `site ${m.source === '5ch' ? 's-5ch' : m.source}`, m.site);
   site.title = m.thread || '';
-  it.append(el('span', 'uid', m.time), site, el('span', 'no', `${m.no}`), el('span', 'uid', m.uid ? `ID:${m.uid}` : ''), el('span', 'snip', m.text));
-  it.title = `${m.name}\n${m.text}`;
+  const text = String(m.text || '').slice(0, 300);
+  it.append(el('span', 'uid', m.time || ''), site, el('span', 'no', `${m.no}`), el('span', 'uid', m.uid ? `ID:${m.uid}` : ''), el('span', 'wlslot'), el('span', 'snip', text));
+  it.title = `${m.thread ? `${m.thread}\n` : ''}${m.name}\n${text}`;
   const ops = el('div', 'ops');
-  if (m.uid) ops.append(button('入れる', 'mini', () => addWhitelist(m.uid), 'この ID をホワイトリストに入れる'));
+  if (m.uid) ops.append(el('span', 'wlop'));
   ops.append(button('スレ', 'mini', () => openThread(m.url, m.no), 'スレタブで開く'));
   if (m.uid) ops.append(button('NG', 'mini', () => addNg('ids', m.uid, 'abone', 'global', ''), 'この ID を NG にする'));
   it.append(ops);
-  if (m.speechKey === speakingKey) it.classList.add('speaking');
+  setRowWl(it, !!m.wl);
+  if (sk === speakingKey) it.classList.add('speaking');
   list.append(it);
-  while (list.children.length > U_MAX) list.firstElementChild.remove();
+  uRows.set(id, it);
+  while (list.children.length > U_MAX) { const f = list.firstElementChild; uRows.delete(f._id); f.remove(); }
   if (atBottom) list.scrollTop = list.scrollHeight;
 }
-$('uClear').addEventListener('click', () => $('uList').replaceChildren());
+// 行のホワイトリストの表示（印と「入れる」/「外す」）
+function setRowWl(it, on) {
+  const uid = it.dataset.uid;
+  if (!uid) return;
+  it.classList.toggle('wl', on);
+  it.querySelector('.wlslot').replaceChildren(...(on ? [el('span', 'wlmark', 'WL')] : []));
+  it.querySelector('.wlop').replaceChildren(on
+    ? button('外す', 'mini', () => removeWhitelist(uid), 'この ID をホワイトリストから外す')
+    : button('入れる', 'mini', () => addWhitelist(uid), 'この ID をホワイトリストに入れる'));
+}
+// ホワイトリストが変わったら欄の印を付け直す
+async function refreshLatestWl() {
+  const rows = [...$('uList').children].filter((r) => r.dataset.uid);
+  if (!rows.length) return;
+  const hit = new Set(await api('wl_check', { ids: [...new Set(rows.map((r) => r.dataset.uid))] }));
+  for (const r of rows) setRowWl(r, hit.has(r.dataset.uid));
+}
+// スレタブの新着（開いた直後の読み込みは除く。NG のレスは出さない）
+function addLatestFromThread(m) {
+  if (m.initial) return;
+  for (const p of m.posts) {
+    if (p.ng) continue;
+    addLatest({ key: m.key, url: m.url, source: m.source, site: m.site, thread: m.title, no: p.no, name: p.name, uid: p.uid, text: p.text, time: m.time, wl: p.wl });
+  }
+}
+$('uClear').addEventListener('click', () => { $('uList').replaceChildren(); uRows.clear(); });
 
 async function addWhitelist(id) {
   await safe(() => api('whitelist_add', { id }));
-  toast(`ID:${id} をホワイトリストに入れました`);
+  toast(`ID:${id} をホワイトリストに入れました`, ['取り消す', () => removeWhitelist(id)]);
 }
 async function removeWhitelist(id) {
   await safe(() => api('whitelist_remove', { id }));
@@ -313,6 +353,12 @@ function postNode(p, counts, t, compact) {
   node.dataset.sk = `u:${activeKey}:${p.no}`;
   const head = el('div', 'ph');
   head.append(el('span', 'pno', p.no));
+  if (p.uid) {
+    const wb = p.wl
+      ? button('WL済', 'mini wlbtn on', () => removeWhitelist(p.uid), 'ホワイトリストに入っています（押すと外す）')
+      : button('WL', 'mini wlbtn', () => addWhitelist(p.uid), 'この ID をホワイトリストに入れる');
+    head.append(wb);
+  }
   const name = el('span', 'pname', p.name);
   name.addEventListener('click', (e) => { e.stopPropagation(); nameMenu(e, p, t); });
   head.append(name);
@@ -325,7 +371,6 @@ function postNode(p, counts, t, compact) {
     id.addEventListener('click', (e) => { e.stopPropagation(); idMenu(e, p, t); });
     head.append(id);
   }
-  if (p.wl) head.append(el('span', 'wlmark', 'ホワイトリスト'));
   node.append(head);
   if (p.ng) node.append(el('div', 'pb', `あぼーん（${p.ngReason || 'NG'}）`));
   else node.append(renderBody(p.text));
@@ -446,6 +491,22 @@ $('tMonitor').addEventListener('change', () => safe(async () => {
 $('tBottom').addEventListener('click', () => { $('tList').scrollTop = $('tList').scrollHeight; });
 $('tBrowser').addEventListener('click', () => { const t = threadTab(); if (t) safe(() => api('open_url', { url: t.url })); });
 $('tFilter').addEventListener('click', () => { idFilter = ''; renderThread(false); });
+
+// スレタブの自動更新（開いているタブすべてが対象）
+async function saveTabPoll() {
+  const sec = Math.min(300, Math.max(10, Math.round(Number($('tPoll').value)) || 15));
+  $('tPoll').value = sec;
+  await safe(() => api('save_tab_poll', { auto: $('tAuto').checked, seconds: sec }));
+  current.tabAuto = $('tAuto').checked;
+  current.tabPollSeconds = sec;
+  $('tPoll').disabled = !$('tAuto').checked;
+}
+$('tAuto').addEventListener('change', () => { saveTabPoll().then(() => toast($('tAuto').checked ? `スレタブを ${$('tPoll').value} 秒ごとに更新します` : 'スレタブの自動更新をやめました')).catch(() => {}); });
+$('tPoll').addEventListener('change', () => { saveTabPoll().catch(() => {}); });
+$('tRefresh').addEventListener('click', () => safe(async () => {
+  $('tRefresh').disabled = true;
+  try { await api('thread_refresh'); } finally { $('tRefresh').disabled = false; }
+}));
 
 function onThreadUpdate(m) {
   const snap = threadCache.get(m.key);
@@ -977,13 +1038,14 @@ $('imgMax').addEventListener('change', () => safe(async () => {
 function onMessage(m) {
   switch (m.type) {
     case 'comment': addViewer(m); break;
-    case 'unlisted': addUnlisted(m); break;
+    case 'unlisted': addLatest(m); break;
     case 'speaking': markSpeaking(m.key); break;
-    case 'thread_update': onThreadUpdate(m); break;
+    case 'thread_update': onThreadUpdate(m); addLatestFromThread(m); break;
     case 'twitch_auth': showAuth(m.status); break;
     case 'ng_changed':
     case 'wl_changed':
       refreshActive().catch(() => {});
+      if (m.type === 'wl_changed') refreshLatestWl().catch(() => {});
       if ($('page-whitelist').classList.contains('active')) refreshWhitelist().catch(() => {});
       break;
     default: break;
@@ -1004,6 +1066,9 @@ function onMessage(m) {
   $('vPanel').checked = current.unlistedPanel !== false;
   $('uPanel').hidden = !$('vPanel').checked;
   $('cPoll').value = current.pollSeconds;
+  $('tAuto').checked = current.tabAuto !== false;
+  $('tPoll').value = current.tabPollSeconds || 15;
+  $('tPoll').disabled = !$('tAuto').checked;
   $('cInitial').value = current.initialPosts;
   $('imgDir').value = current.image?.saveDir || '';
   $('imgMax').value = current.image?.maxMb || 20;

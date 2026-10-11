@@ -26,6 +26,10 @@ pub struct Config {
     pub whitelist: WhitelistOptions,
     /// スレタブで開いているスレ（並び順どおり）
     pub open_tabs: Vec<String>,
+    /// スレタブを自動更新する
+    pub tab_auto: bool,
+    /// スレタブの自動更新の間隔（秒）。10〜300、既定15
+    pub tab_poll_seconds: u64,
     /// ビュワーの下に「番号だけ読んだレス」の欄を出す
     pub unlisted_panel: bool,
     /// 画像ウィンドウ
@@ -53,6 +57,8 @@ impl Default for Config {
             ng: NgConfig::default(),
             whitelist: WhitelistOptions::default(),
             open_tabs: vec![],
+            tab_auto: true,
+            tab_poll_seconds: 15,
             unlisted_panel: true,
             image: ImageOptions::default(),
             twitch_events: crate::events::default_settings(),
@@ -67,6 +73,9 @@ impl Default for Config {
 impl Config {
     pub fn poll_interval(&self) -> std::time::Duration {
         std::time::Duration::from_secs(self.poll_seconds.clamp(10, 300))
+    }
+    pub fn tab_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.tab_poll_seconds.clamp(10, 300))
     }
 }
 

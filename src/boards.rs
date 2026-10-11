@@ -7,6 +7,7 @@ use encoding_rs::{EUC_JP, SHIFT_JIS};
 use reqwest::header::{RANGE, USER_AGENT};
 use reqwest::StatusCode;
 use std::sync::Arc;
+use std::time::Instant;
 
 const UA_DAT: &str = "Monazilla/1.00 (TchViewer)";
 const UA_BROWSER: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TchViewer";
@@ -141,6 +142,10 @@ pub struct ThreadWatcher {
     monitor_from: Option<u32>,
     /// スレタブで開いているか
     pub open: bool,
+    /// 最後に取得した時刻（巡回の間隔を測る）
+    pub last_poll: Instant,
+    /// 続けて失敗した回数（間隔を延ばす）
+    pub fails: u32,
 }
 
 impl ThreadInfo {
@@ -151,6 +156,13 @@ impl ThreadInfo {
             ThreadInfo::Shitaraba { dir, bbs, key } => format!("https://jbbs.shitaraba.net/bbs/read.cgi/{dir}/{bbs}/{key}/"),
         }
     }
+    /// 取得先のホスト（同じホストへは1件ずつ問い合わせる）
+    pub fn host(&self) -> String {
+        match self {
+            ThreadInfo::Dat { host, .. } => host.clone(),
+            ThreadInfo::Shitaraba { .. } => "jbbs.shitaraba.net".into(),
+        }
+    }
     /// 「状態」ページ・スレタブでの識別子（"5ch news4vip/123"）
     pub fn key(&self) -> String {
         format!("{} {}", self.site(), self.label())
@@ -159,7 +171,7 @@ impl ThreadInfo {
 
 impl ThreadWatcher {
     pub fn new(info: ThreadInfo) -> Self {
-        Self { info, bytes: 0, res_no: 0, first: true, title: String::new(), full_notified: false, monitored: false, monitor_from: None, open: false }
+        Self { info, bytes: 0, res_no: 0, first: true, title: String::new(), full_notified: false, monitored: false, monitor_from: None, open: false, last_poll: Instant::now(), fails: 0 }
     }
 
     pub fn key(&self) -> String {
@@ -196,7 +208,7 @@ impl ThreadWatcher {
             self.deliver(app, &posts, was_first);
         }
         if self.open && !posts.is_empty() {
-            app.thread_updated(&self.key(), &self.info.read_url(), &self.title, &posts);
+            app.thread_updated(&self.info, &self.title, &posts, was_first);
         }
         Ok(())
     }
@@ -339,7 +351,7 @@ impl ThreadWatcher {
             self.deliver(app, &posts, false);
         }
         if self.open {
-            app.thread_updated(&self.key(), &self.info.read_url(), &self.title, &posts);
+            app.thread_updated(&self.info, &self.title, &posts, false);
         }
         self.res_no
     }

@@ -79,6 +79,27 @@ pub async fn dispatch(app: &Arc<App>, handle: Option<&tauri::AppHandle>, cmd: &s
             })?;
             Ok(json!({ "ok": true }))
         }
+        // スレタブの自動更新（オン・オフと間隔）
+        "save_tab_poll" => {
+            let auto: bool = arg(&args, "auto")?;
+            let secs: u64 = arg(&args, "seconds")?;
+            app.update_config(|cfg| {
+                cfg.tab_auto = auto;
+                cfg.tab_poll_seconds = secs.clamp(10, 300);
+            })?;
+            Ok(json!({ "ok": true }))
+        }
+        // 開いているスレタブをすぐ取得する
+        "thread_refresh" => {
+            app.refresh_open_tabs().await;
+            Ok(json!({ "ok": true }))
+        }
+        // ビュワー下の欄の ID のうち、ホワイトリストに入っているもの
+        "wl_check" => {
+            let ids: Vec<String> = arg(&args, "ids")?;
+            let hit: Vec<&String> = ids.iter().take(1000).filter(|id| app.allows(id)).collect();
+            Ok(json!(hit))
+        }
         // 貼り付けた URL を確かめて、スレタイを返す（登録前の確認用）
         "probe_thread" => {
             let url: String = arg(&args, "url")?;

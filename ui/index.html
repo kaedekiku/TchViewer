@@ -33,7 +33,7 @@
         </div>
         <span class="grow"></span>
         <label class="tog" title="新しいコメントが来たら一番下へ移動する"><input id="vAuto" type="checkbox" checked>自動スクロール</label>
-        <label class="tog" title="ビュワーの下に「番号だけ読んだレス」を表示する"><input id="vPanel" type="checkbox">番号読み欄</label>
+        <label class="tog" title="ビュワーの下に「スレの最新レス」を表示する"><input id="vPanel" type="checkbox">最新レス欄</label>
         <button id="vClear" class="mini" title="ビュワーの表示を消す（OBS には影響しません）">クリア</button>
         <button id="vTest" class="mini" title="テストコメントを送る">テスト</button>
       </div>
@@ -41,7 +41,7 @@
         <div id="vList" class="vlist" aria-live="polite"></div>
         <div id="vEmpty" class="empty">まだコメントはありません。「接続」で Twitch チャンネルやスレッドを登録してください。</div>
         <div id="uPanel" class="upanel" hidden>
-          <div class="uhead">番号だけ読んだレス <span class="hint">（ホワイトリストに無い ID のレス。OBS には出ません）</span><span class="grow"></span><button id="uClear" class="mini">クリア</button></div>
+          <div class="uhead">スレの最新レス <span class="hint">（開いているスレタブに届いたレスと、監視するスレで番号だけ読んだレス。OBS には出ません）</span><span class="grow"></span><button id="uClear" class="mini">クリア</button></div>
           <div id="uList" class="ulist"></div>
         </div>
       </div>
@@ -52,6 +52,9 @@
       <form id="tUrlForm" class="urlbar">
         <input id="tUrl" placeholder="スレッドの URL を入力して Enter（5ch / したらば / JPNKN）" autocomplete="off">
         <button type="submit">開く</button>
+        <label class="tog" title="開いているスレタブをすべて自動で更新する"><input id="tAuto" type="checkbox">自動更新</label>
+        <input id="tPoll" class="tpoll" type="number" min="10" max="300" step="1" title="自動更新の間隔（10〜300秒）"><span class="unit">秒</span>
+        <button type="button" id="tRefresh" class="mini" title="開いているスレタブをすべて今すぐ更新する">今すぐ更新</button>
       </form>
       <div id="tTabs" class="tabs" role="tablist"></div>
       <div id="tHead" class="thead" hidden>

@@ -204,3 +204,11 @@ table.stats td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .popup[hidden] { display: none; }
 .toast { position: fixed; right: 16px; bottom: 16px; background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
 .toast.show { opacity: .92; }
+.toast.act.show { pointer-events: auto; display: flex; align-items: center; gap: 10px; }
+.toast button.mini { color: var(--bg); border-color: var(--bg); }
+.urlbar .tpoll { flex: none; width: 4.5em; }
+.urlbar .unit { align-self: center; font-size: 12px; color: var(--muted); }
+.uitem.wl { box-shadow: inset 3px 0 0 var(--ok); }
+.uitem .wlmark { font-size: 11px; color: #fff; background: var(--ok); border-radius: 4px; padding: 0 5px; white-space: nowrap; }
+.post button.wlbtn { padding: 0 6px; font-size: 11px; line-height: 1.5; }
+.post button.wlbtn.on { color: #fff; background: var(--ok); border-color: var(--ok); }

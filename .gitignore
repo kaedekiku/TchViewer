@@ -9,3 +9,4 @@
 /.claude/
 # Tauri がビルド時に自動生成するもの
 /gen/
+/TchViewer.exe
