@@ -51,6 +51,9 @@
   .b-hide-no.b-hide-name.b-hide-id .board .meta,
   .t-hide-site .twitch .badge, .t-hide-name .twitch .meta { display: none; }
   .t-user-color .twitch .name.uc { color: var(--uc); }
+  /* Twitch のイベント（サブスク・ギフト・ビッツ・レイド・連続視聴・チャンネルポイントなど）。.ev-sub / .ev-raid などで種類ごとに変えられる */
+  .msg.event { --accent: var(--c-event, #e0a400); }
+  .msg.event .summary { font-weight: 700; -webkit-text-stroke: var(--ow) var(--oc); paint-order: stroke fill; }
   .badges { display: inline-flex; gap: .2em; margin-right: .3em; vertical-align: middle; }
   .badges img { height: var(--t-badge); width: auto; }
   .t-hide-badges .badges { display: none; }
@@ -233,8 +236,15 @@ function add(m) {
   meta.append(name);
   if (m.uid) meta.append(' ', el('span', 'uid', `ID:${m.uid}`));
   const body = el('div', 'body');
-  body.append(meta, renderText(m));
-  row.append(el('span', 'badge', m.site), body);
+  if (tw && m.event) {
+    row.classList.add('event', `ev-${String(m.event.kind).replace(/[^a-z]/g, '')}`);
+    body.append(el('div', 'summary', m.event.summary));
+    if (m.text) body.append(renderText(m));
+    row.append(el('span', 'badge', m.event.label), body);
+  } else {
+    body.append(meta, renderText(m));
+    row.append(el('span', 'badge', m.site), body);
+  }
   list.appendChild(row);
   trim();
   const fade = fadeSeconds();

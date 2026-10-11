@@ -17,7 +17,8 @@
   nav.toc { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 18px; margin-bottom: 24px; }
   nav.toc ol { margin: 0; padding-left: 1.4em; columns: 2; column-gap: 32px; }
   @media (max-width: 640px) { nav.toc ol { columns: 1; } }
-  a { color: var(--accent); }
+  a { color: var(--accent); overflow-wrap: anywhere; }
+  section { min-width: 0; overflow-wrap: anywhere; }
   section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 22px 16px; margin: 0 0 18px; }
   h2 { font-size: 20px; border-bottom: 2px solid var(--accent); padding-bottom: 4px; margin: 14px 0 10px; }
   h3 { font-size: 16px; margin: 16px 0 4px; }
@@ -25,7 +26,7 @@
   .btn { display: inline-block; border: 1px solid var(--accent); color: var(--accent); border-radius: 5px; padding: 0 7px; font-size: .9em; line-height: 1.6; white-space: nowrap; }
   .menu { display: inline-block; background: var(--accent); color: #fff; border-radius: 5px; padding: 0 7px; font-size: .9em; line-height: 1.6; white-space: nowrap; }
   code, kbd { font-family: Consolas, "BIZ UDGothic", monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: .9em; word-break: break-all; }
-  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-size: 14px; line-height: 1.6; }
+  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-size: 14px; line-height: 1.6; max-width: 100%; white-space: pre-wrap; word-break: break-all; }
   pre code { border: 0; padding: 0; background: none; }
   .note { background: var(--note); border-left: 4px solid var(--note-line); border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
   table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 15px; }
@@ -39,19 +40,19 @@
 <div class="wrap">
 <h1>TchViewer 使い方</h1>
 <p class="lead">Twitch のチャットと、5ch・したらば・JPNKN のレスをまとめて OBS に表示し、読み上げるソフトです。<br>
-掲示板のレスは、LiveFake で「配信ホワイトリスト」に入れた人（自分宛て）のものだけを表示します。</p>
+掲示板のレスは、ホワイトリストに入れた人（自分宛て）のものだけを表示し、それ以外は「レス123番さん」と番号だけ読み上げます。</p>
 
 <nav class="toc">
 <ol>
   <li><a href="#need">必要なもの</a></li>
   <li><a href="#start">はじめかた</a></li>
   <li><a href="#connect">Twitch とスレッドをつなぐ</a></li>
-  <li><a href="#livefake">LiveFake と連携する</a></li>
+  <li><a href="#livefake">ホワイトリスト（自分宛てのレス）</a></li>
   <li><a href="#obs">OBS に表示する</a></li>
   <li><a href="#layout">見た目を変える・シーンごとに使い分ける</a></li>
   <li><a href="#speech">読み上げ</a></li>
-  <li><a href="#ng">NGワード</a></li>
-  <li><a href="#viewer">ビュワーと状態の確認</a></li>
+  <li><a href="#ng">NG と Twitch イベント</a></li>
+  <li><a href="#viewer">ビュワー・スレタブ・状態</a></li>
   <li><a href="#trouble">困ったとき</a></li>
   <li><a href="#data">データの場所と削除</a></li>
   <li><a href="#license">ライセンス</a></li>
@@ -87,28 +88,40 @@
 <h2>3. Twitch とスレッドをつなぐ</h2>
 <ol class="steps">
   <li>左のメニューの <span class="menu">接続</span> を押します。</li>
-  <li><b>Twitchチャンネル</b> に、表示したいチャンネルの ID か URL を入れます（例: <code>https://www.twitch.tv/example</code>）。ログインは不要です。</li>
-  <li><b>スレッドURL</b> に、5ch・したらば・JPNKN のスレッドの URL を入れます。複数ある場合は1行に1つずつ入れます。</li>
-  <li><span class="btn">保存して接続</span> を押します。</li>
+  <li><b>Twitch チャンネル</b> の欄に、チャンネルの ID か URL（例: <code>https://www.twitch.tv/example</code>）を入れて Enter を押します。ログインは不要です。外すときは × を押します。</li>
+  <li><b>監視するスレッド</b> の欄に、5ch・したらば・JPNKN のスレッドの URL を貼り付けます。貼り付けるとすぐに確認して一覧に追加されます（複数行もまとめて追加できます）。</li>
 </ol>
-<p>画面の上に、接続先ごとのランプが表示されます。<b>緑</b>=正常、<b>黄</b>=接続中、<b>赤</b>=エラーです。</p>
+<p>一覧の各行には、スレタイ・接続の状態（<b>緑</b>=正常、<b>黄</b>=接続中、<b>赤</b>=エラー）・レス数（○/1000）が出ます。行はドラッグで並べ替えられ、<span class="btn">タブで開く</span> でスレタブに、<span class="btn">ブラウザで開く</span> で普段のブラウザに開けます。</p>
 <ul>
-  <li><b>掲示板の巡回間隔</b>: 掲示板を見に行く間隔です（10〜300秒、普段は 15 秒のままで大丈夫です）。</li>
-  <li><b>Twitch のバッジ画像を取得する</b>: サブスクなどのバッジを表示します。Twitch の公式ではない方法で取得しているため、表示がおかしいときはオフにしてください。</li>
-  <li>スレッドが 1000 まで埋まったら、次スレの URL に差し替えて <span class="btn">保存して接続</span> を押してください。</li>
+  <li><b>詳細設定</b>: 掲示板を見に行く間隔（10〜300秒、普段は 15 秒のままで大丈夫です）など。</li>
+  <li><b>バッジ画像を取得する</b>: サブスクなどのバッジを表示します。Twitch の公式ではない方法で取得しているため、表示がおかしいときはオフにしてください。</li>
+  <li>スレッドが 1000 まで埋まったら、次スレの URL を追加して、古いスレは削除してください。</li>
 </ul>
 </section>
 
 <section id="livefake">
-<h2>4. LiveFake と連携する（掲示板のレスを表示する）</h2>
-<p>TchViewer は、掲示板のレスのうち <b>LiveFake の「配信ホワイトリスト」に入っている ID のレスだけ</b> を表示・読み上げします。ホワイトリストが空のときや、連携していないときは、掲示板のレスは1件も表示されません。</p>
+<h2>4. ホワイトリスト（自分宛てのレス）</h2>
+<p>監視しているスレのレスは、次のように扱われます。</p>
+<table>
+  <tr><th>レス</th><th>扱い</th></tr>
+  <tr><td>ホワイトリストに入っている ID</td><td>OBS に表示し、本文まで読み上げます</td></tr>
+  <tr><td>ホワイトリストに無い ID</td><td>OBS には出さず、「レス123番さん」と番号だけ読み上げます（「読み上げ」で変更できます）。ビュワーの下の <b>番号だけ読んだレス</b> の欄に出ます</td></tr>
+  <tr><td>NG に当たったもの</td><td>表示も読み上げもしません</td></tr>
+</table>
+<h3>ホワイトリストに入れる方法</h3>
+<ul>
+  <li>ビュワーの下の <b>番号だけ読んだレス</b> で、気になったレスの <span class="btn">入れる</span> を押す（「今読んでいるレス」は色付きで示されます）</li>
+  <li><span class="menu">スレ</span> のタブで ID をクリックし、「ホワイトリストに入れる」を選ぶ</li>
+  <li><span class="menu">ホワイトリスト</span> の欄に ID を入れて Enter</li>
+  <li>【試験的】<span class="menu">ホワイトリスト</span> の <b>自動追加</b> をオンにして登録ワードを入れると、そのワードを含むレスの ID を自動で入れます（1日の上限は既定20件・最大100件）。ワードを知っている人なら誰でも入れるので、推測されにくい言葉にしてください</li>
+</ul>
+<div class="note">ホワイトリストは<b>その日だけ有効</b>です（5ch の ID は日付が変わると変わるため）。日本時間の 0 時を過ぎると空になります。一覧から <span class="btn">外す</span> を押した ID は、その日のうちは自動では入れ直しません。</div>
+<h3>LiveFake の配信ホワイトリストも使う（任意）</h3>
 <ol class="steps">
   <li>LiveFake で、<b>設定 &gt; TchViewer連携</b> の「TCVホワイトリスト」をオンにします。</li>
-  <li>TchViewer の左のメニューの <span class="menu">LiveFake連携</span> を押します。</li>
-  <li><span class="btn">フォルダを選ぶ</span> を押し、LiveFake の <code>data</code> フォルダを選びます（LiveFake の 設定 &gt; TchViewer連携 に場所が表示されています）。</li>
-  <li>LiveFake でレスの ID をホワイトリストに追加すると、1〜2秒で TchViewer の「有効なID」に表示されます。</li>
+  <li>TchViewer の <span class="menu">ホワイトリスト</span> で <span class="btn">フォルダを選ぶ</span> を押し、LiveFake の <code>data</code> フォルダを選びます。</li>
+  <li>LiveFake で ID を追加すると、1〜2秒で TchViewer にも反映されます（読み取りだけです）。</li>
 </ol>
-<div class="note">ホワイトリストは<b>その日だけ有効</b>です（5ch の ID は日付が変わると変わるため）。日本時間の 0 時を過ぎると、前の日の一覧は自動で使われなくなります。</div>
 </section>
 
 <section id="obs">
@@ -175,28 +188,44 @@
 </table>
 <ul>
   <li>掲示板のレスは「レス123番さん」「したらば123番さん」「ジャパンくん123番さん」のように番号を付けて読みます。</li>
+  <li>ホワイトリストに無い ID のレスの読み方は、<b>番号だけ読む</b>（既定）・通知音だけ・本文まで・読まない から選べます。</li>
   <li>URL は読みません（YouTube の URL だけ「ユーチューブ」と読みます）。</li>
   <li><b>読み上げるソース</b> で、Twitch・5ch・したらば・JPNKN ごとに読む／読まないを選べます。</li>
-  <li>LiveFake でも読み上げている場合は、同じレスを2回読むことになるので、どちらか一方だけで読む設定にしてください。</li>
+  <li>LiveFake でも読み上げている場合は、同じレスを2回読むことになるので、LiveFake 側の読み上げはオフにしてください。</li>
 </ul>
 </section>
 
 <section id="ng">
-<h2>8. NGワード</h2>
-<p><span class="menu">NGワード</span> に、表示・読み上げしたくない言葉を1行に1つずつ入れます（5ch・したらば・JPNKN のレスが対象です）。入力するとすぐに保存され、次に届いたレスから効きます。</p>
+<h2>8. NG と Twitch イベント</h2>
+<h3>NG</h3>
+<p><span class="menu">NG</span> で、表示・読み上げしたくないレスを指定できます（5ch・したらば・JPNKN が対象です）。</p>
 <ul>
-  <li>大文字・小文字は区別しません。</li>
-  <li><code>/</code> で囲むと正規表現として使えます（例: <code>/^w+$/</code> … 「w」だけのレス）。</li>
-  <li>ホワイトリストに入っている人のレスでも、NGワードに当たれば表示しません。</li>
+  <li><b>種類</b>: ワード（本文）・名前・ID</li>
+  <li><b>処理</b>: 通常あぼーん（スレタブで「あぼーん」と表示）／透明あぼーん（スレタブでも出さない）。どちらも OBS には出ず、読み上げません</li>
+  <li><b>範囲</b>: 全体／このスレだけ</li>
+  <li>ワードと名前は、大文字・小文字を区別しません。<code>/</code> で囲むと正規表現として使えます（例: <code>/^w+$/</code> … 「w」だけのレス）</li>
+  <li>スレタブで文字を選んで右クリック、または選んだ文字をドラッグして下に出る枠に落とすと、すぐに NG ワードに追加できます</li>
 </ul>
+<h3>Twitch イベント</h3>
+<p>サブスク・継続サブスク・ギフト・まとめてギフト・ビッツ・レイド・連続視聴・チャンネルポイントなどを、チャット欄に目立つカードで流して読み上げます。<span class="menu">Twitch イベント</span> で、種類ごとに <b>チャットに流す</b>・<b>読み上げる</b>・<b>読み上げる文</b> を変えられます（<span class="btn">テスト</span> で確認できます）。</p>
+<p>読み上げる文には <code>{name}</code>（名前）<code>{months}</code>（月数）<code>{count}</code>（個数・回数）<code>{bits}</code>（ビッツ）<code>{viewers}</code>（人数）<code>{recipient}</code>（ギフトの相手）<code>{reward}</code>（報酬名）<code>{message}</code>（メッセージ）を差し込めます。</p>
+<h3>入力の無いチャンネルポイント報酬・フォローも表示する（Twitch ログイン）</h3>
+<ol class="steps">
+  <li><span class="menu">Twitch イベント</span> の <span class="btn">Twitch にログイン</span> を押します。</li>
+  <li>ブラウザで Twitch のページが開き、TchViewer に8文字ほどのコードが表示されます。ページにコードを入力し、配信者本人のアカウントで <b>許可</b> を押します。</li>
+  <li>「ログイン中・受信中」になれば完了です。</li>
+</ol>
+<div class="note">求める許可は読み取りだけです（チャンネルポイントの引き換え・フォロワー）。ログイン情報は Windows の機能で暗号化して <code>data</code> フォルダに保存されます。30日間使わないとログインし直しになります。別のパソコンにフォルダをコピーした場合もログインし直しが必要です。<span class="btn">ログアウト</span> で Twitch 側の許可も取り消せます。</div>
 </section>
 
 <section id="viewer">
-<h2>9. ビュワーと状態の確認</h2>
+<h2>9. ビュワー・スレタブ・状態</h2>
 <ul>
-  <li><span class="menu">ビュワー</span> には、OBS に表示されるのと同じコメントが流れます。上のボタンで Twitch・5ch などを絞り込んだり、言葉で検索したりできます。各コメントの <span class="btn">読む</span> でもう一度読み上げ、<span class="btn">コピー</span> で本文をコピーできます。</li>
-  <li><span class="menu">状態</span> では、接続先ごとに「届いた件数」「表示した件数」「ホワイトリスト外で表示しなかった件数」「NGワードで表示しなかった件数」が分かります。掲示板のレスが表示されないときは、まずここを確認してください。</li>
-  <li><span class="menu">情報</span> では、画面のテーマ（Windows に合わせる／ライト／ダーク）を切り替えられます。</li>
+  <li><span class="menu">ビュワー</span> には、OBS に表示されるのと同じコメントが流れます。上のボタンで Twitch・5ch などを絞り込めます。各コメントの <span class="btn">読む</span> でもう一度読み上げ、<span class="btn">コピー</span> で本文をコピーできます。<b>番号読み欄</b> のオン・オフで、下の欄を出すかどうかを選べます。</li>
+  <li><span class="menu">スレ</span> は、スレをタブで開いて全部のレスを見る画面です（OBS には出ません）。上の欄に URL を入れて Enter で開き、タブはドラッグで並べ替えられます。<code>&gt;&gt;123</code> にマウスを乗せるとそのレスが出ます。ID をクリックすると、その ID のレスだけの表示・ホワイトリスト・NG のメニューが出ます。<b>監視する</b> をオンにすると、そのスレを読み上げ・OBS 表示の対象にします。</li>
+  <li>スレの中の画像の URL をクリックすると、TchViewer の別ウィンドウで画像が開きます（右クリックで保存。初めて保存するときに保存先を選びます）。それ以外の URL は普段のブラウザで開きます。</li>
+  <li><span class="menu">状態</span> では、接続先ごとに「届いた件数」「表示した件数」「ホワイトリスト外の件数（番号だけ読んだ件数）」「NG の件数」が分かります。</li>
+  <li><span class="menu">情報</span> では、画面のテーマ（Windows に合わせる／ライト／ダーク）と、画像の保存先・上限を変えられます。</li>
 </ul>
 </section>
 
@@ -206,9 +235,9 @@
   <dt>掲示板のレスが OBS に表示されない</dt>
   <dd><span class="menu">状態</span> を開いて確認してください。
     <ul>
-      <li>「受信」が増えていない → スレッドの URL が正しいか、スレが埋まっていないかを確認します。</li>
-      <li>「ホワイトリスト外」が増えている → その人の ID が LiveFake のホワイトリストに入っていません。<span class="menu">LiveFake連携</span> の「有効なID」も確認してください。</li>
-      <li>「NG」が増えている → NGワードに当たっています。</li>
+      <li>「受信」が増えていない → スレッドの URL が正しいか、スレが埋まっていないか、<b>監視する</b> になっているかを確認します。</li>
+      <li>「ホワイトリスト外」が増えている → その人の ID がホワイトリストに入っていません。ビュワーの下の <b>番号だけ読んだレス</b> から <span class="btn">入れる</span> を押してください。</li>
+      <li>「NG」が増えている → NG に当たっています。</li>
     </ul>
     なお、表示されるのは TchViewer を起動した後に届いたレスです。それより前のレスはさかのぼって表示しません。</dd>
   <dt>「ポート 11280 を開けません」と表示されて起動しない</dt>
@@ -231,6 +260,9 @@
   <tr><th>ファイル・フォルダ</th><th>内容</th></tr>
   <tr><td><code>config.json</code></td><td>設定</td></tr>
   <tr><td><code>layouts\</code></td><td>レイアウト（見た目の設定と追加CSS。メモ帳で編集することもできます）</td></tr>
+  <tr><td><code>whitelist.json</code></td><td>ホワイトリスト（今日の分）</td></tr>
+  <tr><td><code>twitch-auth.bin</code></td><td>Twitch のログイン情報（暗号化。ログインしたときだけ）</td></tr>
+  <tr><td><code>ImageViewURLReplace.txt</code></td><td>画像として開く URL の読み替え規則（LiveFake と同じ書式）</td></tr>
   <tr><td><code>window.json</code></td><td>ウィンドウの位置と大きさ</td></tr>
   <tr><td><code>badges-cache.json</code></td><td>Twitch バッジの一覧（取得できなかったときの予備）</td></tr>
   <tr><td><code>tchviewer.log</code> / <code>tchviewer.prev.log</code></td><td>動作の記録（今回の起動分 / 前回の起動分）</td></tr>

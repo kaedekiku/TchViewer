@@ -12,6 +12,8 @@ mod api;
 mod badges;
 mod boards;
 mod config;
+mod events;
+mod eventsub;
 #[cfg(windows)]
 mod fonts;
 mod image;
@@ -68,6 +70,8 @@ pub struct Comment {
     /// バッジの画像（badges タグを画像に変換したもの）
     #[serde(rename = "badgeList")]
     pub badge_list: Vec<badges::BadgeImage>,
+    /// Twitch のイベント（サブスク・ギフト・ビッツ・レイド・連続視聴・チャンネルポイントなど）
+    pub event: Option<events::TwitchEvent>,
 }
 
 /// 取得元ごとの状況（「状態」ページ・上部のランプ用）
@@ -109,6 +113,12 @@ pub struct App {
     thread_views: Mutex<std::collections::HashMap<String, threads::ThreadView>>,
     /// TchViewer 独自のホワイトリスト（手動・自動）
     own_wl: Mutex<whitelist::OwnWhitelist>,
+    /// Twitch ログイン（トークンはメモリと暗号化ファイルだけ。画面には渡さない）
+    auth: Mutex<Option<eventsub::AuthData>>,
+    auth_status: Mutex<eventsub::AuthStatus>,
+    login_task: Mutex<Option<JoinHandle<()>>>,
+    eventsub_task: Mutex<Option<JoinHandle<()>>>,
+    eventsub_connected: std::sync::atomic::AtomicBool,
     /// 画像ウィンドウで開いた画像（保存用。直近5件・メモリのみ）
     images: Mutex<VecDeque<(String, String, Vec<u8>)>>,
     /// 直近のコメント（id, コメント, 送信済みJSON）
@@ -221,8 +231,22 @@ impl App {
         self.status_history.lock().unwrap().iter().cloned().collect()
     }
 
-    pub fn emit_comment(&self, c: Comment) {
-        let speak = speech::should_speak(&c, &self.config().speech);
+    pub fn emit_comment(&self, mut c: Comment) {
+        let cfg = self.config();
+        let speak = match c.event.as_mut() {
+            // イベント: 種類ごとの設定で、流すか・読むか・読み上げる文を決める
+            Some(e) => {
+                let set = cfg.twitch_events.get(&e.kind).cloned().unwrap_or_default();
+                if !set.show {
+                    return;
+                }
+                let tpl = if set.template.trim().is_empty() { "{name} {message}".to_string() } else { set.template.clone() };
+                e.summary = e.render(&tpl, &c.name, "");
+                let msg = if e.kind == "bits" { events::strip_cheermotes(&c.text) } else { c.text.clone() };
+                (cfg.speech.enabled && set.speak).then(|| e.render(&tpl, &c.name, &msg)).map(|t| speech::clean_for_speech(&t, &cfg.speech)).filter(|t| !t.is_empty())
+            }
+            None => speech::should_speak(&c, &cfg.speech),
+        };
         let id = self.seq.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
         let mut v = serde_json::to_value(&c).unwrap_or_default();
         if let Some(o) = v.as_object_mut() {
@@ -395,6 +419,11 @@ fn main() {
         thread_views: Mutex::new(std::collections::HashMap::new()),
         own_wl: Mutex::new(whitelist::OwnWhitelist::load()),
         images: Mutex::new(VecDeque::new()),
+        auth: Mutex::new(None),
+        auth_status: Mutex::new(eventsub::AuthStatus { state: "none".into(), ..Default::default() }),
+        login_task: Mutex::new(None),
+        eventsub_task: Mutex::new(None),
+        eventsub_connected: std::sync::atomic::AtomicBool::new(false),
         history: Mutex::new(VecDeque::new()),
         status_history: Mutex::new(VecDeque::new()),
         log_file: Mutex::new(config::LogFile::open()),
@@ -422,6 +451,7 @@ fn main() {
     app.restart_whitelist();
     app.apply_connections();
     tokio::spawn(app.clone().run_poller());
+    app.start_saved_login();
     let server = tokio::spawn(server::serve(listener, app.clone()));
 
     if headless {

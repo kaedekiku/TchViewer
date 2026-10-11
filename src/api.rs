@@ -262,6 +262,51 @@ pub async fn dispatch(app: &Arc<App>, handle: Option<&tauri::AppHandle>, cmd: &s
             }
         }
 
+        // ---- Twitch のイベントとログイン
+        "save_twitch_events" => {
+            let mut ev: std::collections::HashMap<String, crate::events::EventSetting> = arg(&args, "events")?;
+            ev.retain(|k, _| crate::events::KINDS.iter().any(|x| x.0 == k));
+            for v in ev.values_mut() {
+                v.template = v.template.chars().take(300).collect();
+            }
+            crate::events::fill_defaults(&mut ev);
+            app.update_config(|cfg| cfg.twitch_events = ev)?;
+            Ok(json!({ "ok": true }))
+        }
+        "event_kinds" => Ok(json!(crate::events::KINDS.iter().map(|(k, l, show, speak, t)| json!({ "kind": k, "label": l, "show": show, "speak": speak, "template": t })).collect::<Vec<_>>())),
+        "twitch_auth_status" => Ok(serde_json::to_value(app.auth_status()).unwrap_or_default()),
+        "twitch_login" => {
+            let st = app.start_login().await?;
+            Ok(serde_json::to_value(st).unwrap_or_default())
+        }
+        "twitch_logout" => {
+            app.logout().await;
+            Ok(json!({ "ok": true }))
+        }
+        "test_event" => {
+            let kind: String = arg(&args, "kind")?;
+            if !crate::events::KINDS.iter().any(|x| x.0 == kind) {
+                return Err("不明な種類です".into());
+            }
+            let mut ev = crate::events::TwitchEvent::new(&kind);
+            ev.months = 12;
+            ev.count = 5;
+            ev.bits = 100;
+            ev.viewers = 30;
+            ev.recipient = "ギフトを受け取った人".into();
+            ev.reward = "テストの報酬".into();
+            app.emit_comment(Comment {
+                source: "twitch".into(),
+                site: "Twitch".into(),
+                thread: "テスト".into(),
+                name: "テスト".into(),
+                text: if ["sub", "resub", "bits", "watchstreak", "points", "announcement"].contains(&kind.as_str()) { "テストのメッセージです".into() } else { String::new() },
+                event: Some(ev),
+                ..Default::default()
+            });
+            Ok(json!({ "ok": true }))
+        }
+
         // ---- 画像ウィンドウ
         // 画像として開く URL か（開くときの URL とリファラ）
         "image_check" => {

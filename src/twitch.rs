@@ -58,6 +58,8 @@ async fn connect_once(app: &Arc<App>, channel: &str, key: &str) -> Result<(), St
         s.state = "ok".into();
         s.last_error.clear();
     });
+    // まとめてギフトの後に届く1件ずつのギフト通知は、まとめて1回にする（同じ ID を持つ）
+    let mut bomb_ids: std::collections::VecDeque<String> = std::collections::VecDeque::new();
     while let Some(msg) = rx.next().await {
         let msg = msg.map_err(|e| e.to_string())?;
         let Message::Text(text) = msg else { continue };
@@ -66,7 +68,29 @@ async fn connect_once(app: &Arc<App>, channel: &str, key: &str) -> Result<(), St
                 tx.send(Message::text("PONG :tmi.twitch.tv")).await.map_err(|e| e.to_string())?;
                 continue;
             }
-            if let Some(mut c) = parse_privmsg(line, channel) {
+            if let Some((mut c, tags)) = parse_line(line, channel) {
+                let gift_ids: Vec<String> = ["msg-param-community-gift-id", "msg-param-origin-id"].iter().filter_map(|k| tags.get(*k).filter(|v| !v.is_empty()).cloned()).collect();
+                match c.event.as_ref().map(|e| e.kind.as_str()) {
+                    Some("submysterygift") => {
+                        bomb_ids.extend(gift_ids);
+                        while bomb_ids.len() > 200 {
+                            bomb_ids.pop_front();
+                        }
+                    }
+                    Some("subgift") if gift_ids.iter().any(|g| bomb_ids.contains(g)) => continue,
+                    Some("points") => {
+                        // ログイン中（EventSub で受け取れる）なら、報酬はそちらで表示し、ここでは普通のチャットとして扱う
+                        if app.eventsub_covers(channel) {
+                            c.event = None;
+                        } else if let Some(e) = c.event.as_mut() {
+                            let id = tags.get("custom-reward-id").cloned().unwrap_or_default();
+                            if !id.is_empty() {
+                                e.reward = app.badges.read().unwrap().reward_title(channel, &id).unwrap_or_else(|| "チャンネルポイント報酬".into());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
                 if app.config().twitch_badges {
                     c.badge_list = app.badges.read().unwrap().resolve(channel, &c.badges);
                 }
@@ -107,7 +131,8 @@ fn unescape_tag(v: &str) -> String {
     out
 }
 
-pub fn parse_privmsg(line: &str, channel: &str) -> Option<Comment> {
+/// チャットの1行（PRIVMSG = 発言、USERNOTICE = サブスクなどのお知らせ）を読む
+pub fn parse_line(line: &str, channel: &str) -> Option<(Comment, HashMap<String, String>)> {
     let mut tags = HashMap::new();
     let mut rest = line;
     if let Some(r) = rest.strip_prefix('@') {
@@ -119,8 +144,28 @@ pub fn parse_privmsg(line: &str, channel: &str) -> Option<Comment> {
         rest = r;
     }
     // :login!login@login.tmi.twitch.tv PRIVMSG #channel :text
+    // :tmi.twitch.tv USERNOTICE #channel[ :text]
     let rest = rest.strip_prefix(':')?;
     let (prefix, rest) = rest.split_once(' ')?;
+    if let Some(r) = rest.strip_prefix("USERNOTICE ") {
+        let event = crate::events::from_usernotice(&tags)?;
+        let message = r.split_once(" :").map(|(_, t)| t.to_string()).unwrap_or_default();
+        let login = tags.get("login").cloned().unwrap_or_default();
+        let name = tags.get("display-name").filter(|s| !s.is_empty()).cloned().unwrap_or_else(|| if login.is_empty() { "匿名".into() } else { login.clone() });
+        let c = Comment {
+            source: "twitch".into(),
+            site: "Twitch".into(),
+            thread: format!("#{channel}"),
+            name,
+            login,
+            color: tags.get("color").cloned().unwrap_or_default(),
+            badges: tags.get("badges").cloned().unwrap_or_default(),
+            text: message,
+            event: Some(event),
+            ..Default::default()
+        };
+        return Some((c, tags));
+    }
     let login = prefix.split('!').next()?.to_string();
     let rest = rest.strip_prefix("PRIVMSG ")?;
     let (_, text) = rest.split_once(" :")?;
@@ -143,7 +188,21 @@ pub fn parse_privmsg(line: &str, channel: &str) -> Option<Comment> {
         emotes.sort_by_key(|e| e.start);
     }
     let name = tags.get("display-name").filter(|s| !s.is_empty()).cloned().unwrap_or_else(|| login.clone());
-    Some(Comment {
+    // ビッツの応援・チャンネルポイント（入力つきの報酬）・ハイライトメッセージはイベントとして扱う
+    let event = if let Some(bits) = tags.get("bits").and_then(|b| b.parse::<u32>().ok()) {
+        let mut e = crate::events::TwitchEvent::new("bits");
+        e.bits = bits;
+        Some(e)
+    } else if tags.get("custom-reward-id").is_some_and(|v| !v.is_empty()) {
+        Some(crate::events::TwitchEvent::new("points"))
+    } else if tags.get("msg-id").is_some_and(|v| v == "highlighted-message") {
+        let mut e = crate::events::TwitchEvent::new("points");
+        e.reward = "メッセージをハイライト".into();
+        Some(e)
+    } else {
+        None
+    };
+    let c = Comment {
         source: "twitch".into(),
         site: "Twitch".into(),
         thread: format!("#{channel}"),
@@ -155,8 +214,15 @@ pub fn parse_privmsg(line: &str, channel: &str) -> Option<Comment> {
         // パワーアップでスタンプを巨大化したメッセージには msg-id=gigantified-emote-message が付く
         giant: !emotes.is_empty() && tags.get("msg-id").is_some_and(|v| v == "gigantified-emote-message"),
         emotes,
+        event,
         ..Default::default()
-    })
+    };
+    Some((c, tags))
+}
+
+#[cfg(test)]
+pub fn parse_privmsg(line: &str, channel: &str) -> Option<Comment> {
+    parse_line(line, channel).map(|(c, _)| c)
 }
 
 #[cfg(test)]
@@ -182,5 +248,15 @@ mod tests {
         let g = parse_privmsg("@display-name=a;emotes=25:0-4;msg-id=gigantified-emote-message :a!a@a.tmi.twitch.tv PRIVMSG #bar :Kappa", "bar").unwrap();
         assert!(g.giant);
         assert!(parse_privmsg(":tmi.twitch.tv 001 justinfan1 :Welcome", "bar").is_none());
+        // サブスク（USERNOTICE）・ビッツ・チャンネルポイント
+        let s = parse_privmsg("@display-name=ハナコ;login=hanako;msg-id=resub;msg-param-cumulative-months=12 :tmi.twitch.tv USERNOTICE #bar :いつも見てます", "bar").unwrap();
+        let e = s.event.unwrap();
+        assert_eq!((e.kind.as_str(), e.months, s.name.as_str(), s.text.as_str()), ("resub", 12, "ハナコ", "いつも見てます"));
+        let s = parse_privmsg("@display-name=A;msg-id=raid;msg-param-viewerCount=30;login=a :tmi.twitch.tv USERNOTICE #bar", "bar").unwrap();
+        assert_eq!(s.event.unwrap().viewers, 30);
+        let b = parse_privmsg("@bits=100;display-name=B :b!b@b.tmi.twitch.tv PRIVMSG #bar :Cheer100 おめでとう", "bar").unwrap();
+        assert_eq!(b.event.unwrap().bits, 100);
+        let p = parse_privmsg("@custom-reward-id=abc;display-name=C :c!c@c.tmi.twitch.tv PRIVMSG #bar :リクエスト", "bar").unwrap();
+        assert_eq!(p.event.unwrap().kind, "points");
     }
 }

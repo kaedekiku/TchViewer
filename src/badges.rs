@@ -33,6 +33,9 @@ pub struct BadgeStore {
     pub global: BadgeMap,
     /// チャンネル名（小文字）→ そのチャンネル独自のバッジ
     pub channels: HashMap<String, BadgeMap>,
+    /// チャンネル名 → チャンネルポイント報酬の ID と名前
+    #[serde(default)]
+    pub rewards: HashMap<String, HashMap<String, String>>,
 }
 
 impl BadgeStore {
@@ -43,6 +46,10 @@ impl BadgeStore {
             .filter(|b| !b.is_empty())
             .filter_map(|b| ch.and_then(|m| m.get(b)).or_else(|| self.global.get(b)).cloned())
             .collect()
+    }
+
+    pub fn reward_title(&self, channel: &str, id: &str) -> Option<String> {
+        self.rewards.get(channel).and_then(|m| m.get(id)).cloned()
     }
 }
 
@@ -88,7 +95,7 @@ async fn fetch(client: &reqwest::Client, channels: &[String]) -> Result<BadgeSto
     let users: String = channels
         .iter()
         .enumerate()
-        .map(|(i, ch)| format!("u{i}: user(login: \"{ch}\") {{ broadcastBadges {{ {fields} }} }}"))
+        .map(|(i, ch)| format!("u{i}: user(login: \"{ch}\") {{ broadcastBadges {{ {fields} }} channel {{ communityPointsSettings {{ customRewards {{ id title }} }} }} }}"))
         .collect::<Vec<_>>()
         .join(" ");
     let query = format!("query {{ badges {{ {fields} }} {users} }}");
@@ -110,9 +117,18 @@ async fn fetch(client: &reqwest::Client, channels: &[String]) -> Result<BadgeSto
     if global.is_empty() {
         return Err("グローバルバッジを取得できません（応答の形式が変わった可能性があります）".into());
     }
-    let mut store = BadgeStore { global, channels: HashMap::new() };
+    let mut store = BadgeStore { global, channels: HashMap::new(), rewards: HashMap::new() };
     for (i, ch) in channels.iter().enumerate() {
-        store.channels.insert(ch.clone(), to_map(data.get(format!("u{i}")).and_then(|u| u.get("broadcastBadges"))));
+        let u = data.get(format!("u{i}"));
+        store.channels.insert(ch.clone(), to_map(u.and_then(|u| u.get("broadcastBadges"))));
+        let rewards: HashMap<String, String> = u
+            .and_then(|u| u.pointer("/channel/communityPointsSettings/customRewards"))
+            .and_then(|r| r.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|r| Some((r.get("id")?.as_str()?.to_string(), r.get("title")?.as_str()?.chars().take(100).collect())))
+            .collect();
+        store.rewards.insert(ch.clone(), rewards);
     }
     Ok(store)
 }

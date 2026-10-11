@@ -15,6 +15,7 @@ function showPage(name) {
   if (name === 'whitelist') refreshWhitelist().catch(() => {});
   if (name === 'status' || name === 'connect') refreshStatus().catch(() => {});
   if (name === 'ng') renderNg();
+  if (name === 'events') refreshAuth().catch(() => {});
 }
 
 // ============================================================ 「今読んでいるもの」の表示
@@ -96,7 +97,15 @@ function viewerItem(m) {
     button('読む', 'mini', () => safe(() => api('speak_comment', { id: m.id })), 'もう一度読み上げる'),
     button('コピー', 'mini', async () => { await navigator.clipboard.writeText(m.text); toast('本文をコピーしました'); }),
   );
-  item.append(meta, ops, renderTwitchBody(m));
+  if (m.event) {
+    // イベント: 種類のラベル・要約（読み上げる文の {message} を除いたもの）・メッセージ
+    item.classList.add('event', `ev-${m.event.kind}`);
+    meta.prepend(el('span', 'evlabel', m.event.label));
+    item.append(meta, ops, el('div', 'summary', m.event.summary));
+    if (m.text) item.append(renderTwitchBody(m));
+  } else {
+    item.append(meta, ops, renderTwitchBody(m));
+  }
   if (`c:${m.id}` === speakingKey) item.classList.add('speaking');
   return item;
 }
@@ -875,6 +884,51 @@ $('look').addEventListener('input', (e) => {
 $('lookTest').addEventListener('click', () => safe(() => api('test_comment')));
 $('ovCopy').addEventListener('click', async () => { await navigator.clipboard.writeText($('ovUrl').value); toast('URLをコピーしました'); });
 
+// ============================================================ Twitch イベント・ログイン
+const AUTH_TEXT = { none: 'ログインしていません', waiting: 'ブラウザでの許可を待っています', connecting: '接続しています…', connected: 'ログイン中・受信中', error: 'エラー' };
+let authStatus = {};
+function showAuth(st) {
+  authStatus = st || {};
+  const who = st.loggedIn && st.login ? `（${st.login}）` : '';
+  $('twAuthState').textContent = `${AUTH_TEXT[st.state] || st.state}${who}${st.message ? ` — ${st.message}` : ''}`;
+  $('twCodeBox').hidden = st.state !== 'waiting' || !st.userCode;
+  $('twCode').textContent = st.userCode || '';
+  $('twLogout').disabled = !st.loggedIn && st.state !== 'waiting';
+}
+async function refreshAuth() { showAuth(await api('twitch_auth_status')); }
+$('twLogin').addEventListener('click', () => safe(async () => {
+  const st = await api('twitch_login');
+  showAuth(st);
+  if (st.verificationUri) await api('open_url', { url: st.verificationUri });
+}));
+$('twOpen').addEventListener('click', () => { if (authStatus.verificationUri) safe(() => api('open_url', { url: authStatus.verificationUri })); });
+$('twLogout').addEventListener('click', () => safe(async () => { await api('twitch_logout'); await refreshAuth(); }));
+
+let eventKinds = [];
+function renderEvents() {
+  const ev = current.twitchEvents || {};
+  $('evTable').replaceChildren(...eventKinds.map((k) => {
+    const s = ev[k.kind] || { show: k.show, speak: k.speak, template: k.template };
+    const row = el('div', 'evrow');
+    const show = el('label', 'tog'); const showIn = el('input'); showIn.type = 'checkbox'; showIn.checked = !!s.show; show.append(showIn, 'チャットに流す');
+    const speak = el('label', 'tog'); const speakIn = el('input'); speakIn.type = 'checkbox'; speakIn.checked = !!s.speak; speak.append(speakIn, '読み上げる');
+    const tpl = el('input'); tpl.value = s.template; tpl.placeholder = k.template;
+    const save = () => saveEvents(k.kind, { show: showIn.checked, speak: speakIn.checked, template: tpl.value });
+    showIn.addEventListener('change', save);
+    speakIn.addEventListener('change', save);
+    tpl.addEventListener('input', () => { clearTimeout(tpl._t); tpl._t = setTimeout(save, 400); });
+    row.append(el('span', '', k.label), show, speak, tpl, button('テスト', 'mini', () => safe(() => api('test_event', { kind: k.kind })), 'この種類のテストを流す'));
+    return row;
+  }));
+}
+async function saveEvents(kind, setting) {
+  const ev = structuredClone(current.twitchEvents || {});
+  ev[kind] = setting;
+  await safe(() => api('save_twitch_events', { events: ev }));
+  current.twitchEvents = ev;
+  flashSaved('evSaved');
+}
+
 // ============================================================ 状態
 async function refreshStatus() {
   const r = await api('stats');
@@ -926,6 +980,7 @@ function onMessage(m) {
     case 'unlisted': addUnlisted(m); break;
     case 'speaking': markSpeaking(m.key); break;
     case 'thread_update': onThreadUpdate(m); break;
+    case 'twitch_auth': showAuth(m.status); break;
     case 'ng_changed':
     case 'wl_changed':
       refreshActive().catch(() => {});
@@ -954,6 +1009,9 @@ function onMessage(m) {
   $('imgMax').value = current.image?.maxMb || 20;
   fillSpeech(current.speech);
   fillWhitelistOpts();
+  eventKinds = await api('event_kinds');
+  renderEvents();
+  refreshAuth().catch(() => {});
   await loadLayouts('標準');
   loadFonts().catch(() => {});
   if (current.speech.engine === 'sapi') loadSapiVoices(true).catch(() => {});

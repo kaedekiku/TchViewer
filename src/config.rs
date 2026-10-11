@@ -30,6 +30,8 @@ pub struct Config {
     pub unlisted_panel: bool,
     /// 画像ウィンドウ
     pub image: ImageOptions,
+    /// Twitch のイベントの種類ごとの設定（流す・読む・読み上げる文）
+    pub twitch_events: HashMap<String, crate::events::EventSetting>,
     /// LiveFake の data フォルダ、または broadcast-whitelist.json そのもののパス
     pub whitelist_path: String,
     /// アプリ画面のテーマ: "system"（Windows に合わせる）/ "light" / "dark"
@@ -53,6 +55,7 @@ impl Default for Config {
             open_tabs: vec![],
             unlisted_panel: true,
             image: ImageOptions::default(),
+            twitch_events: crate::events::default_settings(),
             whitelist_path: String::new(),
             ui_theme: "system".into(),
             speech: SpeechConfig::default(),
@@ -358,6 +361,7 @@ pub fn load() -> Config {
         }
     }
     cfg.whitelist.auto_limit = cfg.whitelist.auto_limit.clamp(1, 100);
+    crate::events::fill_defaults(&mut cfg.twitch_events);
     cfg.image.max_mb = cfg.image.max_mb.clamp(1, 100);
     cfg
 }

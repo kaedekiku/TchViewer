@@ -12,6 +12,7 @@
     <button data-page="viewer" class="active">ビュワー</button>
     <button data-page="threads">スレ</button>
     <button data-page="connect">接続</button>
+    <button data-page="events">Twitch イベント</button>
     <button data-page="whitelist">ホワイトリスト</button>
     <button data-page="ng">NG</button>
     <button data-page="speech">読み上げ</button>
@@ -97,6 +98,31 @@
             <div><label for="cInitial">監視を始めたときに表示する既存レス数</label><input id="cInitial" type="number" min="0" max="1000"></div>
           </div>
         </details>
+      </div>
+    </section>
+
+    <!-- ================================================= Twitch イベント -->
+    <section class="page" id="page-events">
+      <h1>Twitch イベント</h1>
+      <p class="hint">サブスク・ギフト・ビッツ・レイド・連続視聴・入力つきのチャンネルポイント報酬は、ログインしなくても表示できます。入力の無いチャンネルポイント報酬・自動報酬（メッセージのハイライトなど）・フォローを表示するには、配信者本人の Twitch アカウントでログインしてください。</p>
+      <div class="card">
+        <h2>Twitch にログイン（任意）</h2>
+        <dl class="kv">
+          <dt>状態</dt><dd id="twAuthState">-</dd>
+        </dl>
+        <div id="twCodeBox" class="codebox" hidden>
+          <div class="hint">ブラウザで開いた Twitch のページに、次のコードを入力して「許可」を押してください。</div>
+          <div class="code" id="twCode"></div>
+          <button class="sub" id="twOpen">ページをもう一度開く</button>
+        </div>
+        <div class="actions"><button id="twLogin">Twitch にログイン</button><button id="twLogout" class="sub">ログアウト</button></div>
+        <p class="hint">求める許可は読み取りだけです（チャンネルポイントの引き換え・フォロワー）。ログイン情報は Windows の機能で暗号化してデータフォルダに保存し、30日間使わないとログインし直しになります。</p>
+      </div>
+      <div class="card">
+        <h2>種類ごとの設定</h2>
+        <p class="hint">読み上げる文に使える差し込み: <code>{name}</code> 名前 / <code>{months}</code> 月数 / <code>{count}</code> 個数・回数 / <code>{bits}</code> ビッツ / <code>{viewers}</code> 人数 / <code>{recipient}</code> ギフトの相手 / <code>{reward}</code> 報酬名 / <code>{message}</code> メッセージ。読み上げは「読み上げ」ページの「新着コメントを読み上げる」がオンのときだけです。</p>
+        <div id="evTable" class="evtable"></div>
+        <div class="saved" id="evSaved"></div>
       </div>
     </section>
 

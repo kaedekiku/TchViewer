@@ -1,6 +1,6 @@
 [package]
 name = "tchviewer"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "Twitch + 5ch + したらば + JPNKN コメントビューア（OBSブラウザソース用）"
@@ -29,7 +29,7 @@ url = "2"
 windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Win32_Media_Speech", "Win32_Media_Audio", "Win32_System_Com", "Win32_Foundation", "Win32_Graphics_DirectWrite"] }
+windows = { version = "0.62", features = ["Win32_Media_Speech", "Win32_Media_Audio", "Win32_System_Com", "Win32_Foundation", "Win32_Graphics_DirectWrite", "Win32_Security_Cryptography"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

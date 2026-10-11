@@ -115,6 +115,13 @@ pub fn speech_text(c: &Comment, sp: &SpeechConfig) -> String {
     if prefix.is_empty() { body } else { format!("{prefix} {body}") }
 }
 
+/// URL を読まない・空白をまとめる・最大文字数で省略する（イベントの読み上げ文用）
+pub fn clean_for_speech(text: &str, sp: &SpeechConfig) -> String {
+    let c = Comment { source: "twitch".into(), text: text.into(), ..Default::default() };
+    let sp = SpeechConfig { twitch_name: false, ..sp.clone() };
+    speech_text(&c, &sp).replace('\0', "").chars().take(2000).collect()
+}
+
 /// 読み上げ対象なら読み上げ文を返す
 pub fn should_speak(c: &Comment, sp: &SpeechConfig) -> Option<String> {
     if !sp.enabled || c.initial || !sp.sources.get(&c.source).copied().unwrap_or(false) {

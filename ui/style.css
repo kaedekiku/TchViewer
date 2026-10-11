@@ -168,6 +168,16 @@ dl.kv dt { color: var(--muted); font-size: 12px; } dl.kv dd { margin: 0; word-br
 .ngform select { width: auto; }
 .ngform input { flex: 1 1 200px; }
 
+/* ---- Twitch イベント */
+.evtable { display: flex; flex-direction: column; }
+.evrow { display: grid; grid-template-columns: 130px auto auto 1fr auto; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.evrow .tog { justify-self: start; }
+.codebox { margin-top: 10px; }
+.codebox .code { font-family: Consolas, monospace; font-size: 28px; font-weight: 700; letter-spacing: 4px; margin: 6px 0; }
+.vitem.event { --c: #e0a400; background: rgba(224, 164, 0, .08); }
+.vitem .evlabel { font-size: 11px; font-weight: 700; color: #fff; background: #e0a400; border-radius: 4px; padding: 0 6px; }
+.vitem .summary { grid-column: 1; font-weight: 700; }
+
 /* ---- 表示（OBS） */
 .lookgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 420px); gap: 16px; align-items: start; }
 @media (max-width: 1000px) { .lookgrid { grid-template-columns: 1fr; } }
