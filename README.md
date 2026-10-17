@@ -6,6 +6,10 @@ Twitch + 5ch + したらば + JPNKN のコメントビューア（OBS ブラウ�
 - 利用者向けの説明書: [docs/使い方.html](docs/使い方.html)（配布物にも同梱）
 - 関連: LiveFake（5ch / したらば / JPNKN 専用ブラウザ）… https://github.com/kaedekiku/LiveFakeTauri2
 
+> **今後の更新について**
+> TchViewer の機能は、今後 LiveFake に取り込んでいく予定です。そのため、TchViewer はこの先あまり更新されない可能性があります。
+> ただし、単体で使いたい方や作者自身が使うこともあるため、リポジトリと配布物（Releases）はこのまま残します。
+
 ## 起動
 `TchViewer.exe` をダブルクリック（インストール不要）。専用ウィンドウが開き、ウィンドウを閉じると終了する。
 
