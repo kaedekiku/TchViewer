@@ -19,14 +19,20 @@ pub struct SpeechItem {
     pub key: Option<String>,
     /// 文ではなく通知音を鳴らす
     pub chime: bool,
+    /// "twitch" / "thread"。読む直前にその種類の読み上げがオフなら読まない（None は種類を問わず読む。テスト読み上げなど）
+    pub kind: Option<&'static str>,
 }
 
 impl SpeechItem {
     pub fn text(text: String, key: Option<String>) -> Self {
-        Self { text, key, chime: false }
+        Self { text, key, chime: false, kind: None }
     }
     pub fn chime(key: String) -> Self {
-        Self { text: String::new(), key: Some(key), chime: true }
+        Self { text: String::new(), key: Some(key), chime: true, kind: None }
+    }
+    pub fn kind(mut self, kind: &'static str) -> Self {
+        self.kind = Some(kind);
+        self
     }
 }
 
@@ -141,7 +147,7 @@ pub fn clean_for_speech(text: &str, sp: &SpeechConfig) -> String {
 
 /// 読み上げ対象なら読み上げ文を返す
 pub fn should_speak(c: &Comment, sp: &SpeechConfig) -> Option<String> {
-    if !sp.enabled || c.initial || !sp.sources.get(&c.source).copied().unwrap_or(false) {
+    if !sp.kind_on(if c.source == "twitch" { "twitch" } else { "thread" }) || c.initial || !sp.sources.get(&c.source).copied().unwrap_or(false) {
         return None;
     }
     if c.no.is_some_and(|n| n >= 1001) {

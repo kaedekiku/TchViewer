@@ -108,6 +108,8 @@ pub struct NgConfig {
     pub words: Vec<NgEntry>,
     pub names: Vec<NgEntry>,
     pub ids: Vec<NgEntry>,
+    /// 見えない文字（幅ゼロの空白・文字の向きを変える制御文字など）を含むレス: "off"（既定）/ "abone" / "hide"
+    pub invisible: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -266,7 +268,13 @@ impl Default for TwitchStyle {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct SpeechConfig {
-    pub enabled: bool,
+    /// Twitch（チャット・イベント）を読み上げる
+    pub twitch_on: bool,
+    /// スレ（5ch・したらば・JPNKN。番号だけの読み上げも含む）を読み上げる
+    pub thread_on: bool,
+    /// 旧形式の「読み上げる」。読み込み時に twitch_on / thread_on へ引き継ぐ（保存はしない）
+    #[serde(skip_serializing)]
+    pub enabled: Option<bool>,
     /// 読み上げエンジン: "bouyomi" / "sapi" / "voicevox"
     pub engine: String,
     /// 棒読みちゃん（アプリケーション連携のTCPサーバー）
@@ -286,6 +294,13 @@ pub struct SpeechConfig {
     pub bouyomi: BouyomiConfig,
     pub sapi: SapiConfig,
     pub voicevox: VoicevoxConfig,
+}
+
+impl SpeechConfig {
+    /// 種類（"twitch" / "thread"）の読み上げがオンか
+    pub fn kind_on(&self, kind: &str) -> bool {
+        if kind == "twitch" { self.twitch_on } else { self.thread_on }
+    }
 }
 
 /// 棒読みちゃんへ送る速度・音程・音量・声質。set_* が false の項目は棒読みちゃん側の設定で読む
@@ -364,7 +379,9 @@ impl Default for VoicevoxConfig {
 impl Default for SpeechConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            twitch_on: false,
+            thread_on: false,
+            enabled: None,
             engine: "bouyomi".into(),
             host: "127.0.0.1".into(),
             port: 50001,
@@ -411,6 +428,11 @@ pub fn load() -> Config {
                 cfg.ng.words.push(NgEntry { value: w, ..Default::default() });
             }
         }
+    }
+    // 旧形式の「読み上げる」を、Twitch・スレの両方へ引き継ぐ
+    if let Some(on) = cfg.speech.enabled.take() {
+        cfg.speech.twitch_on = on;
+        cfg.speech.thread_on = on;
     }
     cfg.whitelist.auto_limit = cfg.whitelist.auto_limit.clamp(1, 100);
     crate::events::fill_defaults(&mut cfg.twitch_events);
@@ -468,5 +490,23 @@ impl LogFile {
                 self.written += line.len() as u64 + 1;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn speech_enabled_migrates_to_both_kinds() {
+        let mut sp: SpeechConfig = serde_json::from_str(r#"{"enabled":true}"#).unwrap();
+        if let Some(on) = sp.enabled.take() {
+            sp.twitch_on = on;
+            sp.thread_on = on;
+        }
+        assert!(sp.twitch_on && sp.thread_on);
+        let json = serde_json::to_string(&sp).unwrap();
+        assert!(!json.contains(r#""enabled""#));
+        assert!(json.contains(r#""twitchOn":true"#) && json.contains(r#""threadOn":true"#));
     }
 }

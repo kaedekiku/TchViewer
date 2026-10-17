@@ -83,22 +83,99 @@ function recolorViewerNames() {
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', recolorViewerNames);
 
 const BADGE_RE = /^https:\/\/static-cdn\.jtvnw\.net\/badges\/v1\/[0-9a-f-]+$/i;
+// ---- 本文中の URL（ビュワー・スレの最新レス・スレタブ共通）
+// 「ttp://」「tp://」「ps://」「s://」のような書き方も http(s) として扱う（LiveFake と同じ）
+const URL_RE = /(?<![A-Za-z])((?:h?ttps?|tps?|ps|s):\/\/[^\s<>"'「」『』（）【】、。，．　]+)/g;
+const URL_TAIL_RE = /[、。，．！？!?）)」』】]+$/; // 文末の句読点・閉じかっこは URL に含めない
+// 見えない文字（本体の text::is_invisible と同じ）を含む URL はリンクにしない
+const INVISIBLE_RE = /[\u200B\u200C\u2060\uFEFF\u200E\u200F\u202A-\u202E\u2066-\u2069\u115F\u1160\u3164\uFFA0]/;
+const IMAGE_HINT_RE = /\.(jpe?g|png|gif|webp|bmp)(\?|#|$)|^https:\/\/pbs\.twimg\.com\/media\//i;
+// 開ける形の URL に整える。開けない形（長すぎる・見えない文字・ユーザー名付き・形式が不正）なら null。
+// 本当の判定は本体側（links.rs）でもう一度行う
+function normalizeUrl(raw) {
+  const m = /^([a-z]+):\/\//i.exec(raw);
+  if (!m || raw.length > 2048 || INVISIBLE_RE.test(raw)) return null;
+  const scheme = m[1].toLowerCase().endsWith('s') ? 'https' : 'http';
+  try {
+    const u = new URL(`${scheme}://${raw.slice(m[0].length)}`);
+    if (u.username || u.password) return null;
+    return u.href; // 日本語ドメインは xn-- で始まる本来の形になる
+  } catch { return null; }
+}
+// 文字列を、URL だけリンクにして box に足す。truncated: 末尾が切れた本文（切れ目にかかる URL はリンクにしない）
+function appendLinked(box, text, truncated) {
+  let last = 0;
+  for (const m of text.matchAll(URL_RE)) {
+    let raw = m[1];
+    const tail = raw.match(URL_TAIL_RE)?.[0] || '';
+    raw = raw.slice(0, raw.length - tail.length);
+    const end = m.index + raw.length;
+    const url = (truncated && end >= text.length) ? null : normalizeUrl(raw);
+    if (!url) continue;
+    box.append(text.slice(last, m.index), linkNode(raw, url));
+    last = end;
+  }
+  box.append(text.slice(last));
+  return box;
+}
+function linkNode(raw, url) {
+  const a = el('span', 'link', raw);
+  a.dataset.url = url;
+  a.title = `${url}\nクリックで開く・右クリックでコピー`;
+  if (IMAGE_HINT_RE.test(url)) a.classList.add('img');
+  return a;
+}
+// クリック: 画像は画像ウィンドウ、それ以外は既定のブラウザ（同じ URL は 0.5 秒に1回まで）
+const lastOpen = new Map();
+function openLink(url, forceBrowser) {
+  const now = Date.now();
+  if (now - (lastOpen.get(url) || 0) < 500) return;
+  lastOpen.set(url, now);
+  if (lastOpen.size > 200) lastOpen.clear();
+  safe(async () => {
+    const img = !forceBrowser && await api('image_check', { url });
+    if (img) await api('open_image', { url });
+    else await api('open_url', { url });
+  }).catch(() => {});
+}
+document.addEventListener('click', (e) => {
+  const link = e.target.closest?.('.link');
+  if (!link) return;
+  e.preventDefault();
+  openLink(link.dataset.url);
+});
+// 右クリック: コピー・開く（スレタブの「選んだ文字を NG」より先に処理する）
+document.addEventListener('contextmenu', (e) => {
+  const link = e.target.closest?.('.link');
+  if (!link) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const url = link.dataset.url;
+  const items = [{ head: url.length > 60 ? `${url.slice(0, 60)}…` : url },
+    ['URL をコピー', async () => { await navigator.clipboard.writeText(url); toast('URL をコピーしました'); }],
+    ['ブラウザで開く', () => openLink(url, true)]];
+  if (link.classList.contains('img')) items.push(['画像ウィンドウで開く', () => openLink(url)]);
+  showMenu(e.clientX, e.clientY, items);
+}, true);
+
 function renderTwitchBody(m) {
   const box = el('div', 'text');
-  if (m.source !== 'twitch' || !Array.isArray(m.emotes) || !m.emotes.length) { box.textContent = m.text; return box; }
+  if (m.source !== 'twitch' || !Array.isArray(m.emotes) || !m.emotes.length) return appendLinked(box, m.text || '');
   const cps = Array.from(m.text); // Twitchのエモート位置はコードポイント単位
   let pos = 0;
   m.emotes.forEach((e, i) => {
     if (!/^[\w-]+$/.test(e.id) || e.start < pos) return;
     const giant = m.giant && i === m.emotes.length - 1;
-    box.append(cps.slice(pos, e.start).join(''));
+    appendLinked(box, cps.slice(pos, e.start).join(''));
     const img = el('img', giant ? 'emote giant' : 'emote');
+    img.loading = 'lazy'; // 画面に入ったものだけ読み込む
+    img.decoding = 'async';
     img.alt = cps.slice(e.start, e.end + 1).join('');
     img.src = `https://static-cdn.jtvnw.net/emoticons/v2/${encodeURIComponent(e.id)}/default/dark/${giant ? '3.0' : '2.0'}`;
     box.append(img);
     pos = e.end + 1;
   });
-  box.append(cps.slice(pos).join(''));
+  appendLinked(box, cps.slice(pos).join(''));
   return box;
 }
 
@@ -114,7 +191,7 @@ function viewerItem(m) {
     const bs = el('span', 'badges');
     for (const b of m.badgeList) {
       if (typeof b.url !== 'string' || !BADGE_RE.test(b.url)) continue;
-      const img = el('img'); img.src = `${b.url}/2`; img.alt = img.title = String(b.title || ''); bs.append(img);
+      const img = el('img'); img.loading = 'lazy'; img.decoding = 'async'; img.src = `${b.url}/2`; img.alt = img.title = String(b.title || ''); bs.append(img);
     }
     if (bs.children.length) meta.append(bs);
   }
@@ -180,10 +257,14 @@ function addLatest(m) {
   it.dataset.sk = sk;
   it.dataset.uid = m.uid || '';
   it._id = id;
+  it._ng = { key: m.key, name: m.name || '', uid: m.uid || '', text: String(m.text || '') };
   const site = el('span', `site ${m.source === '5ch' ? 's-5ch' : m.source}`, m.site);
   site.title = m.thread || '';
-  const text = String(m.text || '').slice(0, 300);
-  it.append(el('span', 'uid', m.time || ''), site, el('span', 'no', `${m.no}`), el('span', 'uid', m.uid ? `ID:${m.uid}` : ''), el('span', 'wlslot'), el('span', 'snip', text));
+  const full = String(m.text || '');
+  const text = full.slice(0, 300);
+  // 本体からの番号読みは 300 文字で切れて届く。切れ目にかかる URL はリンクにしない
+  const snip = appendLinked(el('span', 'snip'), text, full.length > 300 || text.length >= 300);
+  it.append(el('span', 'uid', m.time || ''), site, el('span', 'no', `${m.no}`), el('span', 'uid', m.uid ? `ID:${m.uid}` : ''), el('span', 'wlslot'), snip);
   it.title = `${m.thread ? `${m.thread}\n` : ''}${m.name}\n${text}`;
   const ops = el('div', 'ops');
   if (m.uid) ops.append(el('span', 'wlop'));
@@ -223,6 +304,13 @@ function addLatestFromThread(m) {
   }
 }
 $('uClear').addEventListener('click', () => { $('uList').replaceChildren(); uRows.clear(); });
+// NG を変えたら、欄に出ているレスのうち NG に当たるもの（通常・透明あぼーん）を消す
+async function refreshLatestNg() {
+  const rows = [...$('uList').children].filter((r) => r._ng);
+  if (!rows.length) return;
+  const hits = await api('ng_filter', { items: rows.map((r) => r._ng) });
+  rows.forEach((r, i) => { if (hits[i]) { uRows.delete(r._id); r.remove(); } });
+}
 
 async function addWhitelist(id) {
   await safe(() => api('whitelist_add', { id }));
@@ -319,6 +407,8 @@ async function activateTab(key) {
   idFilter = '';
   renderTabs();
   const snap = await api('thread_get', { key });
+  if (key !== activeKey) return;
+  threadCache.clear();
   threadCache.set(key, snap);
   // 開いた直後はまだスレタイが分からないので、読み込めたらタブの見出しも更新する
   const tab = tabs.find((t) => t.key === key);
@@ -328,12 +418,40 @@ async function activateTab(key) {
 
 async function refreshActive() {
   if (!activeKey) return;
+  const key = activeKey;
   const list = $('tList');
-  const top = list.scrollTop;
-  const snap = await api('thread_get', { key: activeKey });
-  threadCache.set(activeKey, snap);
-  renderThread(false);
-  list.scrollTop = top;
+  const snap = await api('thread_get', { key });
+  if (key !== activeKey) return;
+  const old = threadCache.get(key);
+  threadCache.set(key, snap);
+  // 前の内容と並びが同じなら、NG・ホワイトリストの状態が変わったレスだけを描き直す
+  const same = old && !idFilter && old.posts.length === snap.posts.length && old.posts.every((p, i) => p.no === snap.posts[i].no);
+  if (!same) {
+    const top = list.scrollTop;
+    renderThread(false);
+    list.scrollTop = top;
+    return;
+  }
+  const t = threadTab();
+  const counts = idCounts(snap.posts);
+  const nodes = new Map();
+  for (const n of list.children) if (n.dataset.no) nodes.set(n.dataset.no, n);
+  snap.posts.forEach((p, i) => {
+    const o = old.posts[i];
+    if (o.ng === p.ng && o.wl === p.wl && o.ngReason === p.ngReason) return;
+    const no = String(p.no);
+    const cur = nodes.get(no);
+    const node = postNode(p, counts, t); // 透明あぼーんなら null
+    if (cur && node) cur.replaceWith(node);
+    else if (cur) cur.remove();
+    else if (node) {
+      // 透明あぼーんを外したレスは、後ろのレスの前に入れ直す
+      let next = null;
+      for (let j = i + 1; j < snap.posts.length && !next; j++) next = nodes.get(String(snap.posts[j].no)) || null;
+      list.insertBefore(node, next);
+    }
+    if (node) nodes.set(no, node); else nodes.delete(no);
+  });
 }
 
 function threadTab() { return tabs.find((t) => t.key === activeKey); }
@@ -366,30 +484,22 @@ function idCounts(posts) {
 }
 
 // 本文: URL とアンカー（>>N）を、文字として安全に組み立てる
-const TOKEN_RE = /(h?ttps?:\/\/[^\s<>"'「」]+)|(>>|＞＞)(\d{1,4})(?:-(\d{1,4}))?/g;
-const IMAGE_HINT_RE = /\.(jpe?g|png|gif|webp|bmp)(\?|#|$)|^https:\/\/pbs\.twimg\.com\/media\//i;
+const ANCHOR_RE = /(>>|＞＞)(\d{1,4})(?:-(\d{1,4}))?/g;
 function renderBody(text) {
   const box = el('div', 'pb');
   let last = 0;
-  for (const m of text.matchAll(TOKEN_RE)) {
-    box.append(text.slice(last, m.index));
-    if (m[1]) {
-      // 「ttp://」「tp://」のような書き方も http として扱う
-      const fixed = m[1].startsWith('http') ? m[1] : `h${m[1]}`;
-      const a = el('span', 'link', m[1]);
-      a.dataset.url = fixed;
-      a.title = fixed;
-      if (IMAGE_HINT_RE.test(fixed)) a.classList.add('img');
-      box.append(a);
-    } else {
+  // アンカー（>>N）の間の文字は、URL をリンクにして足す
+  for (const m of text.matchAll(ANCHOR_RE)) {
+    appendLinked(box, text.slice(last, m.index));
+    {
       const a = el('span', 'anchor', m[0]);
-      a.dataset.from = m[3];
-      a.dataset.to = m[4] || m[3];
+      a.dataset.from = m[2];
+      a.dataset.to = m[3] || m[2];
       box.append(a);
     }
     last = m.index + m[0].length;
   }
-  box.append(text.slice(last));
+  appendLinked(box, text.slice(last));
   return box;
 }
 
@@ -451,15 +561,6 @@ function idMenu(e, p, t) {
 }
 
 // リンクのクリック（画像は画像ウィンドウ、それ以外は既定のブラウザ）
-$('tList').addEventListener('click', (e) => {
-  const link = e.target.closest('.link');
-  if (!link) return;
-  safe(async () => {
-    const img = await api('image_check', { url: link.dataset.url });
-    if (img) await api('open_image', { url: link.dataset.url });
-    else await api('open_url', { url: link.dataset.url });
-  });
-});
 
 // アンカーにマウスを乗せると、そのレスを表示
 let popupTimer = 0;
@@ -581,6 +682,8 @@ function onThreadUpdate(m) {
 async function addNg(kind, value, mode, scope, scopeUrl) {
   value = String(value || '').trim();
   if (!value) return;
+  // 正規表現（/…/）は 512 文字まで（それより長いものは本体側で使わないため、ここで止める）
+  if (value.length > 2 && value.startsWith('/') && value.endsWith('/') && value.length > 512) { toast('NG の正規表現は512文字までです'); return; }
   const ng = structuredClone(current.ng || { words: [], names: [], ids: [] });
   if (ng[kind].some((e) => e.value === value && e.scope === scope && (scope !== 'thread' || e.scopeUrl === scopeUrl))) { toast('既に NG に入っています'); return; }
   ng[kind].push({ value, mode, scope, scopeUrl: scope === 'thread' ? scopeUrl : '' });
@@ -614,6 +717,7 @@ function renderNg() {
       return row;
     }));
   }
+  $('ngInvisible').value = ['abone', 'hide'].includes(ng.invisible) ? ng.invisible : 'off';
   // 追加欄の範囲: 全体 ＋ 監視中・開いているスレ
   const sel = $('ngScope');
   const keep = sel.value;
@@ -622,6 +726,11 @@ function renderNg() {
   sel.replaceChildren(...opts.map(([v, t]) => { const o = el('option', '', t); o.value = v; return o; }));
   if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
 }
+$('ngInvisible').addEventListener('change', () => {
+  const ng = structuredClone(current.ng || { words: [], names: [], ids: [] });
+  ng.invisible = $('ngInvisible').value;
+  saveNg(ng).then(() => toast('見えない文字の NG を変更しました')).catch(() => {});
+});
 $('ngForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const scope = $('ngScope').value;
@@ -834,6 +943,8 @@ function fillSpeech(sp) {
     if (inp.type === 'checkbox') inp.checked = inp.dataset.invert ? !v : !!v; else inp.value = v ?? '';
   }
   $('speech').dataset.engine = sp.engine || 'bouyomi';
+  $('vSpTw').checked = !!sp.twitchOn;
+  $('vSpTh').checked = !!sp.threadOn;
   syncBouyomiParams();
 }
 // 棒読みちゃんの速度などの数値表示と、「棒読みちゃんの設定」のときはスライダーを使えなくする
@@ -855,9 +966,21 @@ function readSpeech() {
   }
   return sp;
 }
+// ビュワーの「Twitch読み上げ」「スレ読み上げ」は、「読み上げ」のページの同じボタンと同じ設定
+// （オフにした種類の順番待ちは、本体が読む直前に飛ばす）
+const SP_KINDS = [['vSpTw', 'twitchOn', 'Twitch'], ['vSpTh', 'threadOn', 'スレ']];
+const spBox = (key) => document.querySelector(`#speech [data-s="${key}"]`);
+for (const [id, key, label] of SP_KINDS) {
+  $(id).addEventListener('change', () => {
+    spBox(key).checked = $(id).checked;
+    queueSpeechSave();
+    toast(`${label}の読み上げを${$(id).checked ? 'オン' : 'オフ'}にしました`);
+  });
+}
 let speechTimer = 0;
 function queueSpeechSave() {
   $('speech').dataset.engine = $('spEngine').value;
+  for (const [id, key] of SP_KINDS) $(id).checked = spBox(key).checked;
   clearTimeout(speechTimer);
   speechTimer = setTimeout(() => safe(async () => {
     const sp = readSpeech();
@@ -1109,6 +1232,7 @@ function onMessage(m) {
     case 'wl_changed':
       refreshActive().catch(() => {});
       if (m.type === 'wl_changed') refreshLatestWl().catch(() => {});
+      if (m.type === 'ng_changed') refreshLatestNg().catch(() => {});
       if ($('page-whitelist').classList.contains('active')) refreshWhitelist().catch(() => {});
       break;
     default: break;
@@ -1153,7 +1277,11 @@ function onMessage(m) {
   renderConnThreads();
   await loadTabs();
   renderNg();
-  setInterval(() => refreshStatus().catch(() => {}), 2000);
+  // 状態の更新は「状態」「接続」のページを見ているときだけ（取得・表示・読み上げは本体側で続く）
+  setInterval(() => {
+    if (document.hidden || !['status', 'connect'].some((p) => $(`page-${p}`).classList.contains('active'))) return;
+    refreshStatus().catch(() => {});
+  }, 2000);
   const startPage = new URLSearchParams(location.search).get('page');
   if (startPage && $(`page-${startPage}`)) showPage(startPage);
 })().catch((e) => toast(`起動に失敗しました: ${e.message || e}`));

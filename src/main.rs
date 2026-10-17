@@ -18,6 +18,7 @@ mod eventsub;
 mod fonts;
 mod image;
 mod layouts;
+mod links;
 mod ng;
 mod server;
 mod speech;
@@ -243,10 +244,11 @@ impl App {
                 let tpl = if set.template.trim().is_empty() { "{name} {message}".to_string() } else { set.template.clone() };
                 e.summary = e.render(&tpl, &c.name, "");
                 let msg = if e.kind == "bits" { events::strip_cheermotes(&c.text) } else { c.text.clone() };
-                (cfg.speech.enabled && set.speak).then(|| e.render(&tpl, &c.name, &msg)).map(|t| speech::clean_for_speech(&t, &cfg.speech)).filter(|t| !t.is_empty())
+                (cfg.speech.twitch_on && set.speak).then(|| e.render(&tpl, &c.name, &msg)).map(|t| speech::clean_for_speech(&t, &cfg.speech)).filter(|t| !t.is_empty())
             }
             None => speech::should_speak(&c, &cfg.speech),
         };
+        let kind = if c.source == "twitch" { "twitch" } else { "thread" };
         let id = self.seq.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
         let mut v = serde_json::to_value(&c).unwrap_or_default();
         if let Some(o) = v.as_object_mut() {
@@ -266,7 +268,7 @@ impl App {
         }
         let _ = self.tx.send(data);
         if let Some(text) = speak {
-            self.enqueue_item(speech::SpeechItem::text(text, Some(format!("c:{id}"))));
+            self.enqueue_item(speech::SpeechItem::text(text, Some(format!("c:{id}"))).kind(kind));
         }
     }
 
@@ -348,11 +350,15 @@ async fn speech_worker(app: Arc<App>, mut rx: mpsc::UnboundedReceiver<(u64, spee
         if generation < app.speech_gen.load(Ordering::SeqCst) {
             continue; // 停止より前に積まれたものは読まない
         }
+        let sp = app.config().speech;
+        // 積まれた後で、その種類（Twitch / スレ）の読み上げがオフにされたものは読まない
+        if item.kind.is_some_and(|k| !sp.kind_on(k)) {
+            continue;
+        }
         // 画面で「今読んでいるもの」を示す
         if let Some(k) = &item.key {
             app.ui_event(serde_json::json!({ "type": "speaking", "key": k }));
         }
-        let sp = app.config().speech;
         let started = Instant::now();
         let text = item.text.clone();
         let result = if item.chime {

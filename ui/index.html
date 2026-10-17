@@ -32,6 +32,8 @@
           <label class="chip jpnkn"><input type="checkbox" value="jpnkn" checked>JPNKN</label>
         </div>
         <span class="grow"></span>
+        <label class="tog" title="Twitch のチャット・イベントを読み上げる（「読み上げ」のページの設定と同じもの）"><input id="vSpTw" type="checkbox">Twitch読み上げ</label>
+        <label class="tog" title="スレ（5ch・したらば・JPNKN。番号だけの読み上げも含む）を読み上げる（「読み上げ」のページの設定と同じもの）"><input id="vSpTh" type="checkbox">スレ読み上げ</label>
         <label class="tog" title="新しいコメントが来たら一番下へ移動する"><input id="vAuto" type="checkbox" checked>自動スクロール</label>
         <label class="tog" title="ビュワーの下に「スレの最新レス」を表示する"><input id="vPanel" type="checkbox">最新レス欄</label>
         <button id="vClear" class="mini" title="ビュワーの表示を消す（OBS には影響しません）">クリア</button>
@@ -184,6 +186,15 @@
       <div class="card"><h2>ワード <span class="count" id="ngCountWords"></span></h2><div id="ngWords" class="ngtable"></div></div>
       <div class="card"><h2>名前 <span class="count" id="ngCountNames"></span></h2><div id="ngNames" class="ngtable"></div></div>
       <div class="card"><h2>ID <span class="count" id="ngCountIds"></span></h2><div id="ngIds" class="ngtable"></div></div>
+      <div class="card">
+        <h2>見えない文字を含むレス</h2>
+        <p class="hint">幅ゼロの空白・文字の向きを変える制御文字・空白に見えるハングルの埋め文字など、画面に見えない文字を名前か本文に含むレスを NG にします（全体）。絵文字（👨‍👩‍👧 や ❤️ など）に使われる文字は対象にしません。</p>
+        <select id="ngInvisible">
+          <option value="off">NG にしない</option>
+          <option value="abone">通常あぼーん</option>
+          <option value="hide">透明あぼーん</option>
+        </select>
+      </div>
     </section>
 
     <!-- ================================================= 読み上げ -->
@@ -191,7 +202,11 @@
       <h1>読み上げ</h1>
       <p class="hint">変更はすぐに保存されます。</p>
       <div class="card" id="speech">
-        <label class="inline big"><input type="checkbox" data-s="enabled"> 新着コメントを読み上げる</label>
+        <div class="actions spkinds">
+          <label class="tog big" title="Twitch のチャット・イベントを読み上げる"><input type="checkbox" data-s="twitchOn">Twitch読み上げ</label>
+          <label class="tog big" title="スレ（5ch・したらば・JPNKN。番号だけの読み上げも含む）を読み上げる"><input type="checkbox" data-s="threadOn">スレ読み上げ</label>
+        </div>
+        <p class="hint">ビュワーの上のボタンと同じ設定です。オフにすると、その種類の順番待ちのものも読みません（今読んでいる1件は最後まで読みます）。</p>
         <label for="spEngine">読み上げエンジン</label>
         <select id="spEngine" data-s="engine">
           <option value="bouyomi">棒読みちゃん</option>

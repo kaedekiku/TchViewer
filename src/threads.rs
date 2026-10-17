@@ -58,7 +58,7 @@ impl App {
         });
         let _ = self.ui_tx.send(msg.to_string());
         let sp = self.config.read().unwrap().speech.clone();
-        if !sp.enabled || !sp.sources.get(source).copied().unwrap_or(false) || p.no >= 1001 {
+        if !sp.thread_on || !sp.sources.get(source).copied().unwrap_or(false) || p.no >= 1001 {
             return;
         }
         let item = match sp.unlisted_mode.as_str() {
@@ -72,7 +72,7 @@ impl App {
             _ => Some(SpeechItem::text(crate::speech::number_text(source, p.no), Some(skey))),
         };
         if let Some(item) = item {
-            self.enqueue_item(item);
+            self.enqueue_item(item.kind("thread"));
         }
     }
 

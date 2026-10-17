@@ -211,10 +211,8 @@ pub async fn dispatch(app: &Arc<App>, handle: Option<&tauri::AppHandle>, cmd: &s
         // 本文の URL を既定のブラウザで開く（http / https のみ）
         "open_url" => {
             let url: String = arg(&args, "url")?;
-            let u = url::Url::parse(url.trim()).map_err(|_| "URL の形式が正しくありません")?;
-            if !matches!(u.scheme(), "http" | "https") {
-                return Err("http / https 以外の URL は開けません".into());
-            }
+            // 本文中の URL もここを通る。行き先の検査は crate::links にまとめてある
+            let u = crate::links::check_open(&url).await?;
             let handle = handle.ok_or("アプリ画面でのみ使えます")?;
             use tauri_plugin_opener::OpenerExt;
             handle.opener().open_url(u.as_str(), None::<&str>).map_err(|e| e.to_string())?;
@@ -222,6 +220,20 @@ pub async fn dispatch(app: &Arc<App>, handle: Option<&tauri::AppHandle>, cmd: &s
         }
 
         // ---- NG（取得済みのレスにもすぐ効く。接続はやり直さない）
+        // ビュワー下の「スレの最新レス」の行のうち、NG に当たるもの（NG を変えたときに欄から消すため）
+        "ng_filter" => {
+            let items: Vec<Value> = arg(&args, "items")?;
+            let ng = app.config().ng;
+            let hits: Vec<Option<String>> = items
+                .iter()
+                .take(1000)
+                .map(|it| {
+                    let s = |k: &str| it.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+                    crate::ng::check(&ng, &s("key"), &s("name"), &s("uid"), &s("text")).map(|h| h.mode)
+                })
+                .collect();
+            Ok(json!(hits))
+        }
         "save_ng" => {
             let ng: crate::config::NgConfig = arg(&args, "ng")?;
             let clean = |v: Vec<crate::config::NgEntry>| -> Vec<crate::config::NgEntry> {
@@ -241,7 +253,8 @@ pub async fn dispatch(app: &Arc<App>, handle: Option<&tauri::AppHandle>, cmd: &s
                     .collect()
             };
             app.update_config(|cfg| {
-                cfg.ng = crate::config::NgConfig { words: clean(ng.words), names: clean(ng.names), ids: clean(ng.ids) };
+                let invisible = if matches!(ng.invisible.as_str(), "abone" | "hide") { ng.invisible.clone() } else { "off".into() };
+                cfg.ng = crate::config::NgConfig { words: clean(ng.words), names: clean(ng.names), ids: clean(ng.ids), invisible };
             })?;
             app.ui_event(json!({ "type": "ng_changed" }));
             Ok(json!({ "ok": true }))

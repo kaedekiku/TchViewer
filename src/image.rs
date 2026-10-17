@@ -117,7 +117,7 @@ pub fn is_public_ip(ip: IpAddr) -> bool {
     }
 }
 
-async fn check_target(u: &Url) -> Result<Vec<SocketAddr>, String> {
+pub async fn check_target(u: &Url) -> Result<Vec<SocketAddr>, String> {
     if !matches!(u.scheme(), "http" | "https") {
         return Err("http / https 以外の URL は開けません".into());
     }

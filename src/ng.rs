@@ -7,7 +7,7 @@
 //! - ワード・名前は `/…/` で正規表現（大小無視）、それ以外は大小無視の部分一致
 
 use crate::config::{NgConfig, NgEntry};
-use crate::text::ng_match;
+use crate::text::{has_invisible, ng_match};
 use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
@@ -38,6 +38,12 @@ pub fn check(ng: &NgConfig, thread_key: &str, name: &str, uid: &str, text: &str)
     };
     for e in ng.words.iter().filter(|e| in_scope(e, thread_key)) {
         if ng_match(&e.value, text) && consider(e, "ワード") {
+            return best;
+        }
+    }
+    if matches!(ng.invisible.as_str(), "abone" | "hide") && (has_invisible(text) || has_invisible(name)) {
+        let e = NgEntry { value: "見えない文字".into(), mode: ng.invisible.clone(), ..Default::default() };
+        if consider(&e, "") {
             return best;
         }
     }
@@ -73,6 +79,7 @@ mod tests {
             words: vec![entry("荒らし", "abone", "global", ""), entry("/^w+$/", "hide", "thread", other)],
             names: vec![entry("コテ", "abone", "global", "")],
             ids: vec![entry("AbC0", "hide", "global", "")],
+            ..Default::default()
         };
         assert_eq!(check(&ng, &key, "名無し", "x", "荒らしです").unwrap().mode, "abone");
         assert!(check(&ng, &key, "名無し", "x", "www").is_none()); // 別スレ限定
@@ -80,5 +87,27 @@ mod tests {
         assert_eq!(check(&ng, &key, "コテハン", "x", "普通").unwrap().reason, "NG名前: コテ");
         assert_eq!(check(&ng, &key, "名無し", "AbC0", "荒らし").unwrap().mode, "hide"); // 透明を優先
         assert!(check(&ng, &key, "名無し", "abc0", "普通").is_none()); // ID は完全一致
+    }
+
+    #[test]
+    fn invisible_chars() {
+        let key = "5ch news4vip/111";
+        let mut ng = NgConfig::default();
+        // 既定（オフ）では当たらない
+        assert!(check(&ng, key, "名無し", "x", "あ\u{200B}い").is_none());
+        ng.invisible = "abone".into();
+        assert_eq!(check(&ng, key, "名無し", "x", "あ\u{200B}い").unwrap().mode, "abone");
+        assert!(check(&ng, key, "名無し", "x", "abc\u{202E}gpj.exe").is_some());
+        assert!(check(&ng, key, "名\u{2060}無し", "x", "普通").is_some()); // 名前も見る
+        // 絵文字に使われる文字は対象外
+        assert!(check(&ng, key, "名無し", "x", "👨\u{200D}👩\u{200D}👧").is_none());
+        assert!(check(&ng, key, "名無し", "x", "\u{2764}\u{FE0F}").is_none());
+        // dat の数値文字参照で届いても、本文に直してから判定する
+        let text = crate::text::html_to_text("あ&#8203;い &#x202e;う");
+        assert_eq!(check(&ng, key, "名無し", "x", &text).unwrap().reason, "NG: 見えない文字");
+        // 透明あぼーんが通常より優先
+        ng.invisible = "hide".into();
+        ng.words.push(entry("あ", "abone", "global", ""));
+        assert_eq!(check(&ng, key, "名無し", "x", "あ\u{200B}").unwrap().mode, "hide");
     }
 }

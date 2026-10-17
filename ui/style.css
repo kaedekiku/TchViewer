@@ -206,6 +206,8 @@ table.stats td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .popup[hidden] { display: none; }
 .toast { position: fixed; right: 16px; bottom: 16px; background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
 .toast.show { opacity: .92; }
+.spkinds { margin: 4px 0; }
+.tog.big { font-size: 14px; padding: 4px 12px; }
 .byparams { display: grid; grid-template-columns: auto minmax(120px, 1fr) 3em auto; gap: 6px 10px; align-items: center; margin: 8px 0; }
 .byparams > label:not(.inline) { margin: 0; }
 .byparams output { font-variant-numeric: tabular-nums; text-align: right; }
